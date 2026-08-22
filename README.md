@@ -21,10 +21,10 @@ Vercel functions do not share an in-memory process, so Blob is required for a bi
 
 1. Add manual receipt items and assign each item to one or more friends.
 2. Choose the fixed demo FX rate and visible conversion fee.
-3. Create the bill and copy a participant link or show its QR code.
+3. Create the bill, keep the refresh-safe host link, and copy a participant link or show its QR code.
 4. Open the participant link in another browser tab, connect the paying wallet, and approve the exact USDC share.
 5. TongTong verifies the confirmed devnet transaction’s recipient, mint, amount, and unique payment memo before marking the participant paid.
-6. Watch the host bill screen update its pending/paid status.
+6. Reopen `/bill/<billId>` any time to watch the host bill screen update its pending/paid status.
 
 ## Scope limits
 

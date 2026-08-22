@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { address, nonDivisibleSequentialInstructionPlan } from "@solana/kit";
 import { useConnectedWallet } from "@solana/kit-plugin-wallet/react";
 import { toast } from "sonner";
@@ -64,6 +65,11 @@ function shareLink(billId: string, participantId: string) {
   return `${window.location.origin}/bill/${billId}/${participantId}`;
 }
 
+function billLink(billId: string) {
+  if (typeof window === "undefined") return `/bill/${billId}`;
+  return `${window.location.origin}/bill/${billId}`;
+}
+
 function QrCode({ value }: { value: string }) {
   return (
     // eslint-disable-next-line @next/next/no-img-element -- QR service returns a generated raster image.
@@ -75,7 +81,13 @@ function QrCode({ value }: { value: string }) {
   );
 }
 
-function BillCreated({ bill, onReset }: { bill: Bill; onReset: () => void }) {
+export function BillCreated({
+  bill,
+  onReset,
+}: {
+  bill: Bill;
+  onReset: () => void;
+}) {
   const [currentBill, setCurrentBill] = useState(bill);
   const [copied, setCopied] = useState<string>();
   const [qrFor, setQrFor] = useState<string>();
@@ -121,6 +133,12 @@ function BillCreated({ bill, onReset }: { bill: Bill; onReset: () => void }) {
             {paidCount}/{currentBill.participants.length} paid · share one link
             per friend.
           </p>
+          <a
+            href={billLink(currentBill.id)}
+            className="mt-2 inline-block text-xs font-bold text-primary underline"
+          >
+            Host status link · refresh-safe
+          </a>
         </div>
         <button
           onClick={onReset}
@@ -197,6 +215,7 @@ function BillCreated({ bill, onReset }: { bill: Bill; onReset: () => void }) {
 }
 
 export function TongTongFlow() {
+  const router = useRouter();
   const client = useAppClient();
   const connected = useConnectedWallet(client);
   const [title, setTitle] = useState("KL dinner");
@@ -329,6 +348,7 @@ export function TongTongFlow() {
       if (!response.ok)
         throw new Error(result.error ?? "Could not create bill");
       setBill(result.bill);
+      router.push(`/bill/${result.bill.id}`);
       toast.success("Bill created. Share a friend link.");
     } catch (error) {
       toast.error(
