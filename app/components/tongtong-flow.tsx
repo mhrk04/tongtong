@@ -82,7 +82,9 @@ function BillCreated({ bill, onReset }: { bill: Bill; onReset: () => void }) {
 
   useEffect(() => {
     const refresh = async () => {
-      const response = await fetch(`/api/bills/${bill.id}`);
+      const response = await fetch(`/api/bills/${bill.id}`, {
+        cache: "no-store",
+      });
       if (response.ok) setCurrentBill((await response.json()).bill);
     };
     const interval = window.setInterval(refresh, 2500);

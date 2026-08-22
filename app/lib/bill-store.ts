@@ -66,6 +66,7 @@ async function readBlobBill(id: string) {
     const result = await get(blobPath(id), {
       access: "private",
       token: blobToken,
+      useCache: false,
     });
     if (!result || result.statusCode !== 200 || !result.stream) {
       return undefined;

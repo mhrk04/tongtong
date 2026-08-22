@@ -11,7 +11,7 @@ export default function BillParticipantPage() {
   const [error, setError] = useState<string>();
 
   useEffect(() => {
-    fetch(`/api/bills/${params.billId}`)
+    fetch(`/api/bills/${params.billId}`, { cache: "no-store" })
       .then(async (response) => {
         const result = await response.json();
         if (!response.ok) throw new Error(result.error ?? "Bill not found");

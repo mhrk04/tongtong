@@ -8,8 +8,14 @@ export async function GET(
   try {
     const bill = await getBill(billId);
     if (!bill)
-      return Response.json({ error: "Bill not found" }, { status: 404 });
-    return Response.json({ bill });
+      return Response.json(
+        { error: "Bill not found" },
+        { status: 404, headers: { "Cache-Control": "no-store" } }
+      );
+    return Response.json(
+      { bill },
+      { headers: { "Cache-Control": "no-store" } }
+    );
   } catch (error) {
     return Response.json(
       {
