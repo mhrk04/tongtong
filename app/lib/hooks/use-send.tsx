@@ -22,7 +22,7 @@ export function useSend() {
         toast.success(successMessage, {
           description: (
             <a
-              href={getExplorerUrl(`/tx/${signature}`)}
+              href={getExplorerUrl(`/tx/${signature}?view=receipt`)}
               target="_blank"
               rel="noopener noreferrer"
               className="underline"

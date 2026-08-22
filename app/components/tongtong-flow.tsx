@@ -772,7 +772,7 @@ export function BillPayment({
 
       {currentParticipant.signature ? (
         <a
-          href={`https://explorer.solana.com/tx/${currentParticipant.signature}?cluster=devnet`}
+          href={`https://explorer.solana.com/tx/${currentParticipant.signature}?cluster=devnet&view=receipt`}
           target="_blank"
           rel="noopener noreferrer"
           className="block rounded-xl bg-green-500/10 px-4 py-3 text-center text-sm font-bold text-green-700 underline dark:text-green-300"
