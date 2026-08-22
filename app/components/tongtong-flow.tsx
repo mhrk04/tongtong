@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { address, nonDivisibleSequentialInstructionPlan } from "@solana/kit";
 import { useConnectedWallet } from "@solana/kit-plugin-wallet/react";
 import { toast } from "sonner";
@@ -215,7 +214,6 @@ export function BillCreated({
 }
 
 export function TongTongFlow() {
-  const router = useRouter();
   const client = useAppClient();
   const connected = useConnectedWallet(client);
   const [title, setTitle] = useState("KL dinner");
@@ -348,7 +346,6 @@ export function TongTongFlow() {
       if (!response.ok)
         throw new Error(result.error ?? "Could not create bill");
       setBill(result.bill);
-      router.push(`/bill/${result.bill.id}`);
       toast.success("Bill created. Share a friend link.");
     } catch (error) {
       toast.error(
