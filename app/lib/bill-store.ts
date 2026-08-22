@@ -1,3 +1,5 @@
+import { get, put } from "@vercel/blob";
+
 export const USDC_DEVNET_MINT = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
 
 export type BillItem = {
@@ -32,88 +34,73 @@ export type Bill = {
 };
 
 declare global {
-  // ponytail: local fallback only; Vercel uses Redis for cross-instance state.
+  // ponytail: local fallback only; Vercel uses Blob for cross-instance state.
   var __tongtongBills: Map<string, Bill> | undefined;
 }
 
 const bills = (globalThis.__tongtongBills ??= new Map<string, Bill>());
-const redisUrl = process.env.UPSTASH_REDIS_REST_URL?.replace(/\/$/, "");
-const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
 
 export class BillStoreError extends Error {}
 
 export class BillStoreConfigurationError extends BillStoreError {
   constructor() {
     super(
-      "Persistent bill storage is not configured. Add UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN in Vercel."
+      "Persistent bill storage is not configured. Create a Vercel Blob store and connect it to this project."
     );
   }
 }
 
 function assertStorageAvailable() {
-  if (process.env.VERCEL === "1" && (!redisUrl || !redisToken)) {
+  if (process.env.VERCEL === "1" && !blobToken) {
     throw new BillStoreConfigurationError();
   }
 }
 
-async function redisCommand<T>(command: string[]) {
-  if (!redisUrl || !redisToken) {
-    assertStorageAvailable();
-    return undefined as T;
-  }
+function blobPath(id: string) {
+  return `tongtong/bills/${id}.json`;
+}
 
+async function readBlobBill(id: string) {
   try {
-    const response = await fetch(redisUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${redisToken}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify(command),
-      cache: "no-store",
+    const result = await get(blobPath(id), {
+      access: "private",
+      token: blobToken,
     });
-    const payload = (await response.json()) as {
-      result?: T;
-      error?: string;
-    };
-
-    if (!response.ok || payload.error) {
-      throw new Error("Redis request failed");
+    if (!result || result.statusCode !== 200 || !result.stream) {
+      return undefined;
     }
-    return payload.result as T;
+    return JSON.parse(await new Response(result.stream).text()) as Bill;
   } catch {
     throw new BillStoreError("Bill storage is temporarily unavailable");
   }
 }
 
-function billKey(id: string) {
-  return `tongtong:bill:${id}`;
-}
-
 export async function getBill(id: string) {
-  if (!redisUrl || !redisToken) {
+  if (!blobToken) {
     assertStorageAvailable();
     return bills.get(id);
   }
-
-  const stored = await redisCommand<string | null>(["GET", billKey(id)]);
-  if (!stored) return undefined;
-
-  try {
-    return JSON.parse(stored) as Bill;
-  } catch {
-    throw new BillStoreError("Stored bill data is invalid");
-  }
+  return readBlobBill(id);
 }
 
 export async function saveBill(bill: Bill) {
-  if (!redisUrl || !redisToken) {
+  if (!blobToken) {
     assertStorageAvailable();
     bills.set(bill.id, bill);
     return bill;
   }
 
-  await redisCommand(["SET", billKey(bill.id), JSON.stringify(bill)]);
+  try {
+    await put(blobPath(bill.id), JSON.stringify(bill), {
+      access: "private",
+      allowOverwrite: true,
+      contentType: "application/json",
+      token: blobToken,
+    });
+  } catch {
+    throw new BillStoreError("Bill storage is temporarily unavailable");
+  }
   return bill;
 }
 

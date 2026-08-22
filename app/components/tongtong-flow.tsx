@@ -187,7 +187,7 @@ function BillCreated({ bill, onReset }: { bill: Bill; onReset: () => void }) {
       </div>
 
       <p className="text-xs leading-relaxed text-muted">
-        On Vercel, bill links stay available through the connected Redis store.
+        On Vercel, bill links stay available through the connected Blob store.
         Local development uses temporary in-memory storage.
       </p>
     </section>
@@ -554,7 +554,7 @@ export function TongTongFlow() {
       </section>
 
       <p className="text-center text-xs text-muted">
-        TongTong is a devnet demo. Configure Upstash Redis before deploying so
+        TongTong is a devnet demo. Configure Vercel Blob before deploying so
         shared bill links work across serverless requests.
       </p>
     </div>

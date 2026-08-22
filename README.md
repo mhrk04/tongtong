@@ -13,14 +13,9 @@ Open http://localhost:3000, connect the host wallet, and use devnet USDC. You ne
 
 ## Vercel deployment
 
-Create an Upstash Redis database through the Vercel Marketplace, then add these environment variables to the Vercel project:
+Create a Vercel Blob store from the project’s Storage tab and connect it to this project. Vercel will add `BLOB_READ_WRITE_TOKEN` to the selected environments automatically. Blob is free on the Hobby plan within its included limits.
 
-```text
-UPSTASH_REDIS_REST_URL
-UPSTASH_REDIS_REST_TOKEN
-```
-
-Vercel functions do not share an in-memory process, so Redis is required for a bill created by one request to be found by a friend’s payment-link request. Local development falls back to in-memory storage when these variables are absent.
+Vercel functions do not share an in-memory process, so Blob is required for a bill created by one request to be found by a friend’s payment-link request. Local development falls back to in-memory storage when the Blob variable is absent.
 
 ## Demo flow
 
