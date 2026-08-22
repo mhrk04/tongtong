@@ -1,5 +1,5 @@
 import { address } from "@solana/kit";
-import { createBill } from "../../lib/bill-store";
+import { BillStoreError, createBill } from "../../lib/bill-store";
 
 export async function POST(request: Request) {
   try {
@@ -79,7 +79,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const bill = createBill({
+    const bill = await createBill({
       title: body.title,
       hostWallet: body.hostWallet,
       rate,
@@ -94,7 +94,7 @@ export async function POST(request: Request) {
       {
         error: error instanceof Error ? error.message : "Could not create bill",
       },
-      { status: 400 }
+      { status: error instanceof BillStoreError ? 503 : 400 }
     );
   }
 }

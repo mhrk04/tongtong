@@ -1,5 +1,6 @@
 import { createSolanaRpc, type Signature } from "@solana/kit";
 import {
+  BillStoreError,
   getBill,
   USDC_DEVNET_MINT,
   saveBill,
@@ -34,10 +35,12 @@ export async function POST(
   { params }: { params: Promise<{ billId: string }> }
 ) {
   const { billId } = await params;
-  const bill = getBill(billId);
-  if (!bill) return Response.json({ error: "Bill not found" }, { status: 404 });
 
   try {
+    const bill = await getBill(billId);
+    if (!bill)
+      return Response.json({ error: "Bill not found" }, { status: 404 });
+
     const body = await request.json();
     const participant = bill.participants.find(
       (candidate) => candidate.id === body.participantId
@@ -114,7 +117,7 @@ export async function POST(
 
     participant.status = "paid";
     participant.signature = signature;
-    saveBill(bill);
+    await saveBill(bill);
     return Response.json({ bill });
   } catch (error) {
     return Response.json(
@@ -122,7 +125,7 @@ export async function POST(
         error:
           error instanceof Error ? error.message : "Could not verify payment",
       },
-      { status: 400 }
+      { status: error instanceof BillStoreError ? 503 : 400 }
     );
   }
 }
