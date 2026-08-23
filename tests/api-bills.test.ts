@@ -6,7 +6,7 @@ const HOST_WALLET = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
 
 type BillPayload = Record<string, unknown>;
 
-function postBill(body: BillPayload) {
+function postBill(body: BillPayload | null) {
   return POST(
     new Request("http://localhost/api/bills", {
       method: "POST",
@@ -97,6 +97,13 @@ describe("POST /api/bills", () => {
     expect((await response.json()).error).toBeTruthy();
   });
 
+  test("rejects a body that is not an object", async () => {
+    const response = await postBill(null);
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "Invalid bill details" });
+  });
+
   test.each([
     ["a blank name", { name: "  " }],
     ["a non-numeric amount", { amountMyr: "abc" }],
@@ -159,6 +166,16 @@ describe("GET /api/bills/[billId]", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(await response.json()).toEqual(created);
+  });
+
+  test("returns 404 for a malformed bill id", async () => {
+    const response = await GET(
+      new Request("http://localhost/api/bills/does-not-exist"),
+      { params: Promise.resolve({ billId: "does-not-exist" }) }
+    );
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: "Bill not found" });
   });
 
   test("returns 404 for an unknown bill", async () => {

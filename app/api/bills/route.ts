@@ -21,6 +21,9 @@ export async function POST(request: Request) {
       return jsonError("Bill is too large", 413);
     }
     const body = JSON.parse(raw);
+    if (body === null || typeof body !== "object") {
+      return jsonError("Invalid bill details", 400);
+    }
     const participantNames = body.participantNames;
     const items = body.items;
     const rate = Number(body.rate);
