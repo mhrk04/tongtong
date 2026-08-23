@@ -53,7 +53,9 @@ export async function POST(request: Request) {
       const candidate = item as Record<string, unknown>;
       const name = String(candidate.name ?? "").trim();
       const amountMyr = Number(candidate.amountMyr);
-      const assigneeIds = candidate.assigneeIds;
+      const assigneeIds = Array.isArray(candidate.assigneeIds)
+        ? [...new Set(candidate.assigneeIds.map(String))]
+        : undefined;
 
       if (
         !name ||
@@ -72,7 +74,7 @@ export async function POST(request: Request) {
         id: `item-${index + 1}`,
         name,
         amountMyr,
-        assigneeIds: [...new Set(assigneeIds.map(String))],
+        assigneeIds,
       };
     });
 
