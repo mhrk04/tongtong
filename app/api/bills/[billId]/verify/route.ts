@@ -1,12 +1,14 @@
 import { createSolanaRpc, type Signature } from "@solana/kit";
 import {
   getBill,
+  isValidBillId,
   USDC_DEVNET_MINT,
   saveBill,
 } from "../../../../lib/bill-store";
-import { routeErrorResponse } from "../../../../lib/api-response";
+import { jsonError, routeErrorResponse } from "../../../../lib/api-response";
 
 const rpc = createSolanaRpc("https://api.devnet.solana.com");
+const SIGNATURE_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{64,90}$/;
 
 type TokenBalance = {
   owner?: string;
@@ -14,10 +16,21 @@ type TokenBalance = {
   uiTokenAmount?: { amount?: string };
 };
 
+type ParsedMemo = { memo?: string; info?: string | { memo?: string } };
+
 type ParsedInstruction = {
   program?: string;
-  parsed?: unknown;
+  parsed?: string | ParsedMemo;
 };
+
+function readMemo(instruction: ParsedInstruction) {
+  const { parsed } = instruction;
+  if (typeof parsed === "string") return parsed;
+  if (parsed?.memo != null) return parsed.memo;
+  const info = parsed?.info;
+  if (typeof info === "string") return info;
+  return info?.memo;
+}
 
 function sumOwnerBalance(
   balances: TokenBalance[] | undefined,
@@ -35,11 +48,13 @@ export async function POST(
   { params }: { params: Promise<{ billId: string }> }
 ) {
   const { billId } = await params;
+  if (!isValidBillId(billId)) {
+    return jsonError("Bill not found", 404);
+  }
 
   try {
     const bill = await getBill(billId);
-    if (!bill)
-      return Response.json({ error: "Bill not found" }, { status: 404 });
+    if (!bill) return jsonError("Bill not found", 404);
 
     const body = await request.json();
     const participant = bill.participants.find(
@@ -47,23 +62,22 @@ export async function POST(
     );
     const signature = String(body.signature ?? "");
 
-    if (!participant || !signature) {
-      return Response.json(
-        { error: "Invalid payment details" },
-        { status: 400 }
-      );
+    if (!participant || !SIGNATURE_PATTERN.test(signature)) {
+      return jsonError("Invalid payment details", 400);
     }
     if (participant.status === "paid") {
-      if (
-        participant.signature === signature ||
-        participant.paidBy === bill.hostWallet
-      ) {
-        return Response.json({ bill });
-      }
-      return Response.json(
-        { error: "This bill share is already paid" },
-        { status: 409 }
-      );
+      // Only the recorded transaction can replay a settled share; a share the
+      // host covered has no signature, so nothing can confirm it.
+      if (participant.signature === signature) return Response.json({ bill });
+      return jsonError("This bill share is already paid", 409);
+    }
+    if (
+      bill.participants.some(
+        (candidate) =>
+          candidate.id !== participant.id && candidate.signature === signature
+      )
+    ) {
+      return jsonError("This transaction already settled another share", 409);
     }
 
     const transaction = await rpc
@@ -85,16 +99,10 @@ export async function POST(
     } | null;
 
     if (!parsed?.meta) {
-      return Response.json(
-        { error: "Transaction is not confirmed yet" },
-        { status: 409 }
-      );
+      return jsonError("Transaction is not confirmed yet", 409);
     }
     if (parsed.meta.err != null) {
-      return Response.json(
-        { error: "Transaction failed on devnet" },
-        { status: 400 }
-      );
+      return jsonError("Transaction failed on devnet", 400);
     }
 
     const before = sumOwnerBalance(
@@ -111,16 +119,13 @@ export async function POST(
     const memoMatches = (parsed.transaction?.message?.instructions ?? []).some(
       (instruction) =>
         instruction.program === "spl-memo" &&
-        (instruction.parsed === participant.paymentReference ||
-          JSON.stringify(instruction.parsed).includes(
-            participant.paymentReference
-          ))
+        readMemo(instruction)?.trim() === participant.paymentReference
     );
 
     if (after - before !== expected || !memoMatches) {
-      return Response.json(
-        { error: "Payment does not match this participant's bill share" },
-        { status: 400 }
+      return jsonError(
+        "Payment does not match this participant's bill share",
+        400
       );
     }
 

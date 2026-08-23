@@ -1,5 +1,4 @@
 import { BillStoreError } from "./bill-store";
-import { errorMessage } from "./errors";
 
 export const NO_STORE_HEADERS = { "Cache-Control": "no-store" };
 
@@ -11,13 +10,19 @@ export function jsonError(
   return Response.json({ error: message }, { status, headers });
 }
 
+/**
+ * Storage outages are safe to describe; every other failure is logged server
+ * side and answered with a generic message so internal details stay private.
+ */
 export function routeErrorResponse(
   error: unknown,
   fallbackMessage: string,
-  defaultStatus: number
+  defaultStatus: number,
+  headers?: HeadersInit
 ) {
-  return jsonError(
-    errorMessage(error, fallbackMessage),
-    error instanceof BillStoreError ? 503 : defaultStatus
-  );
+  if (error instanceof BillStoreError) {
+    return jsonError(error.message, 503, headers);
+  }
+  console.error(fallbackMessage, error);
+  return jsonError(fallbackMessage, defaultStatus, headers);
 }
