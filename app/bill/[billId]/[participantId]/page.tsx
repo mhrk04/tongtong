@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { BillPayment } from "../../../components/tongtong-flow";
 import type { Bill } from "../../../lib/bill-store";
+import { errorMessage, fetchJson } from "../../../lib/fetch-json";
 
 export default function BillParticipantPage() {
   const params = useParams<{ billId: string; participantId: string }>();
@@ -11,15 +12,20 @@ export default function BillParticipantPage() {
   const [error, setError] = useState<string>();
 
   useEffect(() => {
-    fetch(`/api/bills/${params.billId}`, { cache: "no-store" })
-      .then(async (response) => {
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error ?? "Bill not found");
-        setBill(result.bill);
+    let cancelled = false;
+    fetchJson<{ bill: Bill }>(`/api/bills/${params.billId}`, {
+      cache: "no-store",
+    })
+      .then((result) => {
+        if (!cancelled) setBill(result.bill);
       })
-      .catch((reason: unknown) =>
-        setError(reason instanceof Error ? reason.message : "Bill not found")
-      );
+      .catch((reason: unknown) => {
+        console.error(reason);
+        if (!cancelled) setError(errorMessage(reason, "Bill not found"));
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [params.billId]);
 
   if (error) {

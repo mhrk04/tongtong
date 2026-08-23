@@ -41,13 +41,19 @@ declare global {
 const bills = (globalThis.__tongtongBills ??= new Map<string, Bill>());
 const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
 
-export class BillStoreError extends Error {}
+export class BillStoreError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "BillStoreError";
+  }
+}
 
 export class BillStoreConfigurationError extends BillStoreError {
   constructor() {
     super(
       "Persistent bill storage is not configured. Create a Vercel Blob store and connect it to this project."
     );
+    this.name = "BillStoreConfigurationError";
   }
 }
 
@@ -62,6 +68,7 @@ function blobPath(id: string) {
 }
 
 async function readBlobBill(id: string) {
+  let serialized: string;
   try {
     const result = await get(blobPath(id), {
       access: "private",
@@ -71,9 +78,17 @@ async function readBlobBill(id: string) {
     if (!result || result.statusCode !== 200 || !result.stream) {
       return undefined;
     }
-    return JSON.parse(await new Response(result.stream).text()) as Bill;
-  } catch {
-    throw new BillStoreError("Bill storage is temporarily unavailable");
+    serialized = await new Response(result.stream).text();
+  } catch (cause) {
+    throw new BillStoreError("Bill storage is temporarily unavailable", {
+      cause,
+    });
+  }
+
+  try {
+    return JSON.parse(serialized) as Bill;
+  } catch (cause) {
+    throw new BillStoreError(`Stored bill ${id} is corrupted`, { cause });
   }
 }
 
@@ -99,8 +114,10 @@ export async function saveBill(bill: Bill) {
       contentType: "application/json",
       token: blobToken,
     });
-  } catch {
-    throw new BillStoreError("Bill storage is temporarily unavailable");
+  } catch (cause) {
+    throw new BillStoreError("Bill storage is temporarily unavailable", {
+      cause,
+    });
   }
   return bill;
 }

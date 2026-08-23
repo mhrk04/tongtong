@@ -1,4 +1,5 @@
-import { BillStoreError, getBill } from "../../../lib/bill-store";
+import { getBill } from "../../../lib/bill-store";
+import { errorResponse } from "../../../lib/api-errors";
 
 export async function GET(
   _request: Request,
@@ -17,11 +18,8 @@ export async function GET(
       { headers: { "Cache-Control": "no-store" } }
     );
   } catch (error) {
-    return Response.json(
-      {
-        error: error instanceof Error ? error.message : "Bill storage failed",
-      },
-      { status: error instanceof BillStoreError ? 503 : 500 }
-    );
+    return errorResponse(error, "Could not load this bill", {
+      headers: { "Cache-Control": "no-store" },
+    });
   }
 }

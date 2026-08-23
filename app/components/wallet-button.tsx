@@ -9,6 +9,7 @@ import {
   useConnectedWallet,
   useWalletStatus,
 } from "@solana/kit-plugin-wallet/react";
+import { toast } from "sonner";
 import { useBalance } from "../lib/hooks/use-balance";
 import { ellipsify } from "../lib/explorer";
 import { useCluster } from "./cluster-context";
@@ -55,8 +56,10 @@ export function WalletButton() {
       await navigator.clipboard.writeText(walletAddress);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {
+    } catch (error) {
       // Clipboard API unavailable (insecure origin) or permission denied.
+      console.error(error);
+      toast.error("Could not copy the address. Copy it from the field above.");
     }
   };
 
@@ -141,6 +144,14 @@ export function WalletButton() {
                 : "—"}{" "}
               <span className="text-sm font-normal text-muted">SOL</span>
             </p>
+            {balance.error != null && (
+              <p role="alert" className="mt-1 text-xs text-destructive">
+                Balance unavailable:{" "}
+                {balance.error instanceof Error
+                  ? balance.error.message
+                  : String(balance.error)}
+              </p>
+            )}
           </div>
 
           <div className="mb-3 rounded-lg border border-border-low bg-cream/50 px-3 py-2">

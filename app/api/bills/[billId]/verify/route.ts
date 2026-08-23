@@ -1,10 +1,14 @@
 import { createSolanaRpc, type Signature } from "@solana/kit";
 import {
-  BillStoreError,
   getBill,
   USDC_DEVNET_MINT,
   saveBill,
 } from "../../../../lib/bill-store";
+import {
+  errorResponse,
+  UpstreamError,
+  ValidationError,
+} from "../../../../lib/api-errors";
 
 const rpc = createSolanaRpc("https://api.devnet.solana.com");
 
@@ -18,6 +22,30 @@ type ParsedInstruction = {
   program?: string;
   parsed?: unknown;
 };
+
+/**
+ * `parsed` is whatever the RPC decoded for the instruction: a string for
+ * spl-memo, but an object or `undefined` for other shapes, so it is serialized
+ * defensively before the reference is matched.
+ */
+function memoMatchesReference(
+  instructions: ParsedInstruction[],
+  reference: string
+) {
+  return instructions.some((instruction) => {
+    if (instruction.program !== "spl-memo") return false;
+    if (instruction.parsed === reference) return true;
+    return serialize(instruction.parsed).includes(reference);
+  });
+}
+
+function serialize(value: unknown) {
+  try {
+    return JSON.stringify(value) ?? "";
+  } catch {
+    return "";
+  }
+}
 
 function sumOwnerBalance(
   balances: TokenBalance[] | undefined,
@@ -48,22 +76,27 @@ export async function POST(
     const signature = String(body.signature ?? "");
 
     if (!participant || !signature) {
-      return Response.json(
-        { error: "Invalid payment details" },
-        { status: 400 }
-      );
+      throw new ValidationError("Invalid payment details");
     }
     if (participant.status === "paid" && participant.signature === signature) {
       return Response.json({ bill });
     }
 
-    const transaction = await rpc
-      .getTransaction(signature as Signature, {
-        commitment: "confirmed",
-        encoding: "jsonParsed",
-        maxSupportedTransactionVersion: 0,
-      })
-      .send();
+    let transaction;
+    try {
+      transaction = await rpc
+        .getTransaction(signature as Signature, {
+          commitment: "confirmed",
+          encoding: "jsonParsed",
+          maxSupportedTransactionVersion: 0,
+        })
+        .send();
+    } catch (cause) {
+      throw new UpstreamError(
+        "Could not reach Solana devnet to verify this payment. Retry in a moment.",
+        { cause }
+      );
+    }
     const parsed = transaction as unknown as {
       meta?: {
         err?: unknown;
@@ -82,10 +115,7 @@ export async function POST(
       );
     }
     if (parsed.meta.err != null) {
-      return Response.json(
-        { error: "Transaction failed on devnet" },
-        { status: 400 }
-      );
+      throw new ValidationError("Transaction failed on devnet");
     }
 
     const before = sumOwnerBalance(
@@ -99,33 +129,30 @@ export async function POST(
       USDC_DEVNET_MINT
     );
     const expected = BigInt(participant.amountBaseUnits);
-    const memoMatches = (parsed.transaction?.message?.instructions ?? []).some(
-      (instruction) =>
-        instruction.program === "spl-memo" &&
-        (instruction.parsed === participant.paymentReference ||
-          JSON.stringify(instruction.parsed).includes(
-            participant.paymentReference
-          ))
+    const memoMatches = memoMatchesReference(
+      parsed.transaction?.message?.instructions ?? [],
+      participant.paymentReference
     );
 
     if (after - before !== expected || !memoMatches) {
-      return Response.json(
-        { error: "Payment does not match this participant's bill share" },
-        { status: 400 }
+      throw new ValidationError(
+        "Payment does not match this participant's bill share"
       );
     }
 
-    participant.status = "paid";
-    participant.signature = signature;
-    await saveBill(bill);
-    return Response.json({ bill });
+    // Build the paid bill instead of mutating in place so a storage failure
+    // cannot leave the in-memory local store marked paid without persisting.
+    const paidBill = {
+      ...bill,
+      participants: bill.participants.map((candidate) =>
+        candidate.id === participant.id
+          ? { ...candidate, status: "paid" as const, signature }
+          : candidate
+      ),
+    };
+    await saveBill(paidBill);
+    return Response.json({ bill: paidBill });
   } catch (error) {
-    return Response.json(
-      {
-        error:
-          error instanceof Error ? error.message : "Could not verify payment",
-      },
-      { status: error instanceof BillStoreError ? 503 : 400 }
-    );
+    return errorResponse(error, "Could not verify payment");
   }
 }

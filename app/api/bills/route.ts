@@ -1,5 +1,6 @@
 import { address } from "@solana/kit";
-import { BillStoreError, createBill } from "../../lib/bill-store";
+import { createBill } from "../../lib/bill-store";
+import { errorResponse, ValidationError } from "../../lib/api-errors";
 
 export async function POST(request: Request) {
   try {
@@ -26,7 +27,11 @@ export async function POST(request: Request) {
       return Response.json({ error: "Invalid bill details" }, { status: 400 });
     }
 
-    address(body.hostWallet);
+    try {
+      address(body.hostWallet);
+    } catch (cause) {
+      throw new ValidationError("Invalid host wallet address", { cause });
+    }
 
     const normalizedItems = items.map((item: unknown, index: number) => {
       const candidate = item as Record<string, unknown>;
@@ -41,7 +46,7 @@ export async function POST(request: Request) {
         !Array.isArray(assigneeIds) ||
         assigneeIds.length === 0
       ) {
-        throw new Error(`Invalid item ${index + 1}`);
+        throw new ValidationError(`Invalid item ${index + 1}`);
       }
 
       return {
@@ -90,11 +95,6 @@ export async function POST(request: Request) {
 
     return Response.json({ bill }, { status: 201 });
   } catch (error) {
-    return Response.json(
-      {
-        error: error instanceof Error ? error.message : "Could not create bill",
-      },
-      { status: error instanceof BillStoreError ? 503 : 400 }
-    );
+    return errorResponse(error, "Could not create bill");
   }
 }
