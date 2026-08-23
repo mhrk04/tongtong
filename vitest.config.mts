@@ -5,6 +5,10 @@ export default defineConfig({
     conditions: ["browser"],
   },
   test: {
+    coverage: {
+      include: ["app/**"],
+      provider: "v8",
+    },
     environment: "jsdom",
     include: ["tests/**/*.test.{ts,tsx}"],
     server: {
