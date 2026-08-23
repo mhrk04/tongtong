@@ -100,7 +100,9 @@ export function BillCreated({
     const refresh = async () => {
       try {
         setCurrentBill(await fetchBill(bill.id));
-      } catch {}
+      } catch {
+        // Polling failures are ignored; the next tick retries.
+      }
     };
     const interval = window.setInterval(refresh, 2500);
     return () => window.clearInterval(interval);
