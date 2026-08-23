@@ -16,14 +16,17 @@ type TokenBalance = {
   uiTokenAmount?: { amount?: string };
 };
 
+type ParsedMemo = { memo?: string; info?: string | { memo?: string } };
+
 type ParsedInstruction = {
   program?: string;
-  parsed?: string | { info?: string | { memo?: string } };
+  parsed?: string | ParsedMemo;
 };
 
 function readMemo(instruction: ParsedInstruction) {
   const { parsed } = instruction;
   if (typeof parsed === "string") return parsed;
+  if (parsed?.memo != null) return parsed.memo;
   const info = parsed?.info;
   if (typeof info === "string") return info;
   return info?.memo;
