@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ClusterSelect } from "./cluster-select";
 import { ThemeToggle } from "./theme-toggle";
 import { WalletButton } from "./wallet-button";
 
@@ -12,9 +13,7 @@ export function AppHeader() {
       </Link>
       <div className="flex items-center gap-3">
         <ThemeToggle />
-        <span className="rounded-full border border-border-low bg-card px-3 py-2 text-xs font-bold text-blue-600 dark:text-blue-300">
-          devnet
-        </span>
+        <ClusterSelect />
         <WalletButton />
       </div>
     </header>
