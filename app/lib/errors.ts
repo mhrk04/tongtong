@@ -1,3 +1,7 @@
+export function errorMessage(err: unknown, fallback: string): string {
+  return err instanceof Error ? err.message : fallback;
+}
+
 export function parseTransactionError(err: unknown): string {
   if (err instanceof Error && err.message.includes("User rejected")) {
     return "Transaction was rejected by the wallet.";

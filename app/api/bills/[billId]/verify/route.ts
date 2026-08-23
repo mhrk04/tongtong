@@ -1,11 +1,11 @@
 import { createSolanaRpc, type Signature } from "@solana/kit";
 import {
-  BillStoreError,
   getBill,
   isValidBillId,
   USDC_DEVNET_MINT,
   saveBill,
 } from "../../../../lib/bill-store";
+import { routeErrorResponse } from "../../../../lib/api-response";
 
 const rpc = createSolanaRpc("https://api.devnet.solana.com");
 const SIGNATURE_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{64,90}$/;
@@ -153,13 +153,6 @@ export async function POST(
     await saveBill(bill);
     return Response.json({ bill });
   } catch (error) {
-    if (error instanceof BillStoreError) {
-      return Response.json({ error: error.message }, { status: 503 });
-    }
-    console.error("Payment verification failed", error);
-    return Response.json(
-      { error: "Could not verify payment" },
-      { status: 400 }
-    );
+    return routeErrorResponse(error, "Could not verify payment", 400);
   }
 }

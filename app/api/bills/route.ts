@@ -1,5 +1,6 @@
 import { address } from "@solana/kit";
-import { BillStoreError, createBill } from "../../lib/bill-store";
+import { createBill } from "../../lib/bill-store";
+import { jsonError, routeErrorResponse } from "../../lib/api-response";
 
 const MAX_BODY_BYTES = 32_000;
 const MAX_TITLE_LENGTH = 120;
@@ -15,7 +16,7 @@ export async function POST(request: Request) {
   try {
     const raw = await request.text();
     if (raw.length > MAX_BODY_BYTES) {
-      return Response.json({ error: "Bill is too large" }, { status: 413 });
+      return jsonError("Bill is too large", 413);
     }
     const body = JSON.parse(raw);
     const participantNames = body.participantNames;
@@ -44,7 +45,7 @@ export async function POST(request: Request) {
       feePercent < 0 ||
       feePercent > MAX_FEE_PERCENT
     ) {
-      return Response.json({ error: "Invalid bill details" }, { status: 400 });
+      return jsonError("Invalid bill details", 400);
     }
 
     address(body.hostWallet);
@@ -86,10 +87,7 @@ export async function POST(request: Request) {
         item.assigneeIds.some((id) => !participantIds.has(id))
       )
     ) {
-      return Response.json(
-        { error: "Invalid item assignment" },
-        { status: 400 }
-      );
+      return jsonError("Invalid item assignment", 400);
     }
     if (
       [...participantIds].some(
@@ -99,9 +97,9 @@ export async function POST(request: Request) {
           )
       )
     ) {
-      return Response.json(
-        { error: "Every person must have at least one assigned item" },
-        { status: 400 }
+      return jsonError(
+        "Every person must have at least one assigned item",
+        400
       );
     }
 
@@ -116,13 +114,9 @@ export async function POST(request: Request) {
 
     return Response.json({ bill }, { status: 201 });
   } catch (error) {
-    if (error instanceof BillStoreError) {
-      return Response.json({ error: error.message }, { status: 503 });
-    }
     if (error instanceof InvalidBillInputError) {
-      return Response.json({ error: error.message }, { status: 400 });
+      return jsonError(error.message, 400);
     }
-    console.error("Bill creation failed", error);
-    return Response.json({ error: "Invalid bill details" }, { status: 400 });
+    return routeErrorResponse(error, "Invalid bill details", 400);
   }
 }

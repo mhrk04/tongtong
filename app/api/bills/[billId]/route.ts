@@ -1,10 +1,9 @@
+import { getBill, isValidBillId } from "../../../lib/bill-store";
 import {
-  BillStoreError,
-  getBill,
-  isValidBillId,
-} from "../../../lib/bill-store";
-
-const noStore = { "Cache-Control": "no-store" };
+  NO_STORE_HEADERS,
+  jsonError,
+  routeErrorResponse,
+} from "../../../lib/api-response";
 
 export async function GET(
   _request: Request,
@@ -12,30 +11,18 @@ export async function GET(
 ) {
   const { billId } = await params;
   if (!isValidBillId(billId)) {
-    return Response.json(
-      { error: "Bill not found" },
-      { status: 404, headers: noStore }
-    );
+    return jsonError("Bill not found", 404, NO_STORE_HEADERS);
   }
   try {
     const bill = await getBill(billId);
-    if (!bill)
-      return Response.json(
-        { error: "Bill not found" },
-        { status: 404, headers: noStore }
-      );
-    return Response.json({ bill }, { headers: noStore });
+    if (!bill) return jsonError("Bill not found", 404, NO_STORE_HEADERS);
+    return Response.json({ bill }, { headers: NO_STORE_HEADERS });
   } catch (error) {
-    if (error instanceof BillStoreError) {
-      return Response.json(
-        { error: error.message },
-        { status: 503, headers: noStore }
-      );
-    }
-    console.error("Bill lookup failed", error);
-    return Response.json(
-      { error: "Bill storage failed" },
-      { status: 500, headers: noStore }
+    return routeErrorResponse(
+      error,
+      "Bill storage failed",
+      500,
+      NO_STORE_HEADERS
     );
   }
 }
