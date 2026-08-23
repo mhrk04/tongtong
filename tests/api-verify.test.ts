@@ -91,7 +91,7 @@ beforeEach(() => {
 
 describe("POST /api/bills/[billId]/verify", () => {
   test("returns 404 for an unknown bill", async () => {
-    const response = await verify("TT-NOPE", {
+    const response = await verify("TT-DEADBEEF", {
       participantId: "p2",
       signature: SIGNATURE,
     });
@@ -223,7 +223,7 @@ describe("POST /api/bills/[billId]/verify", () => {
     });
   });
 
-  test("accepts the creator's share as already covered", async () => {
+  test("rejects a signature for the creator's covered share", async () => {
     const bill = await seedBill();
     getTransaction.mockRejectedValue(new Error("should not be called"));
 
@@ -232,14 +232,17 @@ describe("POST /api/bills/[billId]/verify", () => {
       signature: SIGNATURE,
     });
 
-    expect(response.status).toBe(200);
-    expect((await response.json()).bill.participants[0]).toMatchObject({
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: "This bill share is already paid",
+    });
+    expect(bill.participants[0]).toMatchObject({
       status: "paid",
       paidBy: HOST_WALLET,
     });
   });
 
-  test("surfaces RPC failures as a bad gateway", async () => {
+  test("surfaces RPC failures as a bad gateway without leaking details", async () => {
     const bill = await seedBill();
     getTransaction.mockRejectedValue(new Error("rpc unavailable"));
 
@@ -249,8 +252,9 @@ describe("POST /api/bills/[billId]/verify", () => {
     });
 
     expect(response.status).toBe(502);
-    expect((await response.json()).error).toContain(
-      "Could not reach Solana devnet"
-    );
+    expect(await response.json()).toEqual({
+      error:
+        "Could not reach Solana devnet to verify this payment. Retry in a moment.",
+    });
   });
 });

@@ -1,10 +1,26 @@
 import { address } from "@solana/kit";
 import { createBill } from "../../lib/bill-store";
-import { routeErrorResponse, ValidationError } from "../../lib/api-response";
+import {
+  jsonError,
+  routeErrorResponse,
+  ValidationError,
+} from "../../lib/api-response";
+
+const MAX_BODY_BYTES = 32_000;
+const MAX_TITLE_LENGTH = 120;
+const MAX_NAME_LENGTH = 60;
+const MAX_ITEM_NAME_LENGTH = 80;
+const MAX_AMOUNT_MYR = 1_000_000;
+const MAX_RATE = 1_000_000;
+const MAX_FEE_PERCENT = 100;
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
+    const raw = await request.text();
+    if (raw.length > MAX_BODY_BYTES) {
+      return jsonError("Bill is too large", 413);
+    }
+    const body = JSON.parse(raw);
     const participantNames = body.participantNames;
     const items = body.items;
     const rate = Number(body.rate);
@@ -12,6 +28,7 @@ export async function POST(request: Request) {
 
     if (
       typeof body.title !== "string" ||
+      body.title.length > MAX_TITLE_LENGTH ||
       typeof body.hostWallet !== "string" ||
       !Array.isArray(participantNames) ||
       participantNames.length < 2 ||
@@ -19,12 +36,18 @@ export async function POST(request: Request) {
       !Array.isArray(items) ||
       items.length < 1 ||
       items.length > 50 ||
+      participantNames.some(
+        (name: unknown) =>
+          typeof name !== "string" || name.length > MAX_NAME_LENGTH
+      ) ||
       !Number.isFinite(rate) ||
       rate <= 0 ||
+      rate > MAX_RATE ||
       !Number.isFinite(feePercent) ||
-      feePercent < 0
+      feePercent < 0 ||
+      feePercent > MAX_FEE_PERCENT
     ) {
-      return Response.json({ error: "Invalid bill details" }, { status: 400 });
+      return jsonError("Invalid bill details", 400);
     }
 
     try {
@@ -37,14 +60,19 @@ export async function POST(request: Request) {
       const candidate = item as Record<string, unknown>;
       const name = String(candidate.name ?? "").trim();
       const amountMyr = Number(candidate.amountMyr);
-      const assigneeIds = candidate.assigneeIds;
+      const assigneeIds = Array.isArray(candidate.assigneeIds)
+        ? [...new Set(candidate.assigneeIds.map(String))]
+        : undefined;
 
       if (
         !name ||
+        name.length > MAX_ITEM_NAME_LENGTH ||
         !Number.isFinite(amountMyr) ||
         amountMyr <= 0 ||
+        amountMyr > MAX_AMOUNT_MYR ||
         !Array.isArray(assigneeIds) ||
-        assigneeIds.length === 0
+        assigneeIds.length === 0 ||
+        assigneeIds.length > participantNames.length
       ) {
         throw new ValidationError(`Invalid item ${index + 1}`);
       }
@@ -53,7 +81,7 @@ export async function POST(request: Request) {
         id: `item-${index + 1}`,
         name,
         amountMyr,
-        assigneeIds: assigneeIds.map(String),
+        assigneeIds,
       };
     });
 
@@ -65,10 +93,7 @@ export async function POST(request: Request) {
         item.assigneeIds.some((id) => !participantIds.has(id))
       )
     ) {
-      return Response.json(
-        { error: "Invalid item assignment" },
-        { status: 400 }
-      );
+      return jsonError("Invalid item assignment", 400);
     }
     if (
       [...participantIds].some(
@@ -78,9 +103,9 @@ export async function POST(request: Request) {
           )
       )
     ) {
-      return Response.json(
-        { error: "Every person must have at least one assigned item" },
-        { status: 400 }
+      return jsonError(
+        "Every person must have at least one assigned item",
+        400
       );
     }
 

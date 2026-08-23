@@ -1,6 +1,7 @@
 import { createSolanaRpc, type Signature } from "@solana/kit";
 import {
   getBill,
+  isValidBillId,
   USDC_DEVNET_MINT,
   saveBill,
 } from "../../../../lib/bill-store";
@@ -8,10 +9,10 @@ import {
   jsonError,
   routeErrorResponse,
   UpstreamError,
-  ValidationError,
 } from "../../../../lib/api-response";
 
 const rpc = createSolanaRpc("https://api.devnet.solana.com");
+const SIGNATURE_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{64,90}$/;
 
 type TokenBalance = {
   owner?: string;
@@ -19,33 +20,20 @@ type TokenBalance = {
   uiTokenAmount?: { amount?: string };
 };
 
+type ParsedMemo = { memo?: string; info?: string | { memo?: string } };
+
 type ParsedInstruction = {
   program?: string;
-  parsed?: unknown;
+  parsed?: string | ParsedMemo;
 };
 
-/**
- * `parsed` is whatever the RPC decoded for the instruction: a string for
- * spl-memo, but an object or `undefined` for other shapes, so it is serialized
- * defensively before the reference is matched.
- */
-function memoMatchesReference(
-  instructions: ParsedInstruction[],
-  reference: string
-) {
-  return instructions.some((instruction) => {
-    if (instruction.program !== "spl-memo") return false;
-    if (instruction.parsed === reference) return true;
-    return serialize(instruction.parsed).includes(reference);
-  });
-}
-
-function serialize(value: unknown) {
-  try {
-    return JSON.stringify(value) ?? "";
-  } catch {
-    return "";
-  }
+function readMemo(instruction: ParsedInstruction) {
+  const { parsed } = instruction;
+  if (typeof parsed === "string") return parsed;
+  if (parsed?.memo != null) return parsed.memo;
+  const info = parsed?.info;
+  if (typeof info === "string") return info;
+  return info?.memo;
 }
 
 function sumOwnerBalance(
@@ -64,6 +52,9 @@ export async function POST(
   { params }: { params: Promise<{ billId: string }> }
 ) {
   const { billId } = await params;
+  if (!isValidBillId(billId)) {
+    return jsonError("Bill not found", 404);
+  }
 
   try {
     const bill = await getBill(billId);
@@ -75,17 +66,22 @@ export async function POST(
     );
     const signature = String(body.signature ?? "");
 
-    if (!participant || !signature) {
-      throw new ValidationError("Invalid payment details");
+    if (!participant || !SIGNATURE_PATTERN.test(signature)) {
+      return jsonError("Invalid payment details", 400);
     }
     if (participant.status === "paid") {
-      if (
-        participant.signature === signature ||
-        participant.paidBy === bill.hostWallet
-      ) {
-        return Response.json({ bill });
-      }
+      // Only the recorded transaction can replay a settled share; a share the
+      // host covered has no signature, so nothing can confirm it.
+      if (participant.signature === signature) return Response.json({ bill });
       return jsonError("This bill share is already paid", 409);
+    }
+    if (
+      bill.participants.some(
+        (candidate) =>
+          candidate.id !== participant.id && candidate.signature === signature
+      )
+    ) {
+      return jsonError("This transaction already settled another share", 409);
     }
 
     let transaction;
@@ -98,6 +94,7 @@ export async function POST(
         })
         .send();
     } catch (cause) {
+      // The payer's request is fine; devnet is not answering.
       throw new UpstreamError(
         "Could not reach Solana devnet to verify this payment. Retry in a moment.",
         { cause }
@@ -118,7 +115,7 @@ export async function POST(
       return jsonError("Transaction is not confirmed yet", 409);
     }
     if (parsed.meta.err != null) {
-      throw new ValidationError("Transaction failed on devnet");
+      return jsonError("Transaction failed on devnet", 400);
     }
 
     const before = sumOwnerBalance(
@@ -132,19 +129,21 @@ export async function POST(
       USDC_DEVNET_MINT
     );
     const expected = BigInt(participant.amountBaseUnits);
-    const memoMatches = memoMatchesReference(
-      parsed.transaction?.message?.instructions ?? [],
-      participant.paymentReference
+    const memoMatches = (parsed.transaction?.message?.instructions ?? []).some(
+      (instruction) =>
+        instruction.program === "spl-memo" &&
+        readMemo(instruction)?.trim() === participant.paymentReference
     );
 
     if (after - before !== expected || !memoMatches) {
-      throw new ValidationError(
-        "Payment does not match this participant's bill share"
+      return jsonError(
+        "Payment does not match this participant's bill share",
+        400
       );
     }
 
-    // Build the paid bill instead of mutating in place so a storage failure
-    // cannot leave the in-memory local store marked paid without persisting.
+    // Only report the share as paid once the store has accepted it, so a
+    // storage failure cannot leave the in-memory bill claiming otherwise.
     const paidBill = {
       ...bill,
       participants: bill.participants.map((candidate) =>

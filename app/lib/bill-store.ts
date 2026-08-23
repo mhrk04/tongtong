@@ -48,6 +48,22 @@ export class BillStoreError extends Error {
   }
 }
 
+export class InvalidBillIdError extends Error {
+  constructor() {
+    super("Invalid bill id");
+  }
+}
+
+const BILL_ID_PATTERN = /^TT-[0-9A-F]{8,16}$/;
+
+export function isValidBillId(id: unknown): id is string {
+  return typeof id === "string" && BILL_ID_PATTERN.test(id);
+}
+
+function assertValidBillId(id: string) {
+  if (!isValidBillId(id)) throw new InvalidBillIdError();
+}
+
 export class BillStoreConfigurationError extends BillStoreError {
   constructor() {
     super(
@@ -64,6 +80,7 @@ function assertStorageAvailable() {
 }
 
 function blobPath(id: string) {
+  assertValidBillId(id);
   return `tongtong/bills/${id}.json`;
 }
 
@@ -103,6 +120,7 @@ async function readBlobBill(id: string) {
 }
 
 export async function getBill(id: string) {
+  assertValidBillId(id);
   if (!blobToken) {
     assertStorageAvailable();
     const bill = bills.get(id);
@@ -115,6 +133,7 @@ export async function getBill(id: string) {
 }
 
 export async function saveBill(bill: Bill) {
+  assertValidBillId(bill.id);
   if (!blobToken) {
     assertStorageAvailable();
     bills.set(bill.id, bill);
@@ -164,7 +183,12 @@ export async function createBill(input: {
   items: BillItem[];
   participantNames: string[];
 }) {
-  const id = `TT-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+  const id = `TT-${Array.from(
+    crypto.getRandomValues(new Uint8Array(8)),
+    (byte) => byte.toString(16).padStart(2, "0")
+  )
+    .join("")
+    .toUpperCase()}`;
   const participants = input.participantNames.map((name, index) => {
     const participantId = `p${index + 1}`;
     const amount = calculateParticipantAmount(

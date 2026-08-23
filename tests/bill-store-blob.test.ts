@@ -13,7 +13,7 @@ const { BillStoreError, getBill, saveBill } =
   await import("../app/lib/bill-store");
 
 const bill: Bill = {
-  id: "TT-BLOB001",
+  id: "TT-B10B0001",
   title: "Dinner",
   hostWallet: "HostWallet",
   rate: 5,
@@ -37,7 +37,7 @@ describe("getBill with Blob storage", () => {
     });
 
     expect(await getBill(bill.id)).toEqual(bill);
-    expect(get).toHaveBeenCalledWith("tongtong/bills/TT-BLOB001.json", {
+    expect(get).toHaveBeenCalledWith("tongtong/bills/TT-B10B0001.json", {
       access: "private",
       token: "test-token",
       useCache: false,
@@ -99,7 +99,7 @@ describe("saveBill with Blob storage", () => {
 
     expect(await saveBill(bill)).toBe(bill);
     expect(put).toHaveBeenCalledWith(
-      "tongtong/bills/TT-BLOB001.json",
+      "tongtong/bills/TT-B10B0001.json",
       JSON.stringify(bill),
       {
         access: "private",

@@ -5,6 +5,7 @@ import {
   calculateParticipantAmount,
   createBill,
   getBill,
+  isValidBillId,
   saveBill,
   type Bill,
   type BillItem,
@@ -14,6 +15,18 @@ const items: BillItem[] = [
   { id: "food", name: "Food", amountMyr: 30, assigneeIds: ["p1", "p2"] },
   { id: "ride", name: "Ride", amountMyr: 10, assigneeIds: ["p1"] },
 ];
+
+test("rejects bill ids outside the generated format", () => {
+  expect(isValidBillId("TT-A1B2C3D4")).toBe(true);
+  expect(isValidBillId("TT-A1B2C3D4E5F60718")).toBe(true);
+  expect(isValidBillId("../../secrets")).toBe(false);
+  expect(isValidBillId("TT-../../secrets")).toBe(false);
+  expect(isValidBillId("tt-a1b2c3d4")).toBe(false);
+});
+
+test("does not read storage for traversal ids", async () => {
+  await expect(getBill("../../secrets")).rejects.toThrow("Invalid bill id");
+});
 
 afterEach(() => {
   delete process.env.VERCEL;
@@ -76,7 +89,7 @@ describe("createBill", () => {
       participantNames: ["  Ada  ", "Bob"],
     });
 
-    expect(bill.id).toMatch(/^TT-[0-9A-F]{8}$/);
+    expect(bill.id).toMatch(/^TT-[0-9A-F]{16}$/);
     expect(bill.title).toBe("Dinner");
     expect(bill.totalMyr).toBe(40);
     expect(Date.parse(bill.createdAt)).not.toBeNaN();
@@ -125,7 +138,7 @@ describe("createBill", () => {
 
 describe("in-memory storage", () => {
   const bill: Bill = {
-    id: "TT-STORE01",
+    id: "TT-5701E011",
     title: "Bill",
     hostWallet: "HostWallet",
     rate: 5,
@@ -137,7 +150,7 @@ describe("in-memory storage", () => {
   };
 
   test("returns undefined for an unknown bill", async () => {
-    expect(await getBill("TT-MISSING")).toBeUndefined();
+    expect(await getBill("TT-A15511A6")).toBeUndefined();
   });
 
   test("round-trips a saved bill", async () => {

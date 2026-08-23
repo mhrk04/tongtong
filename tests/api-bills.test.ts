@@ -163,8 +163,8 @@ describe("GET /api/bills/[billId]", () => {
 
   test("returns 404 for an unknown bill", async () => {
     const response = await GET(
-      new Request("http://localhost/api/bills/TT-NOPE"),
-      { params: Promise.resolve({ billId: "TT-NOPE" }) }
+      new Request("http://localhost/api/bills/TT-DEADBEEF"),
+      { params: Promise.resolve({ billId: "TT-DEADBEEF" }) }
     );
 
     expect(response.status).toBe(404);
@@ -176,8 +176,8 @@ describe("GET /api/bills/[billId]", () => {
     process.env.VERCEL = "1";
     try {
       const response = await GET(
-        new Request("http://localhost/api/bills/TT-NOPE"),
-        { params: Promise.resolve({ billId: "TT-NOPE" }) }
+        new Request("http://localhost/api/bills/TT-DEADBEEF"),
+        { params: Promise.resolve({ billId: "TT-DEADBEEF" }) }
       );
 
       expect(response.status).toBe(503);
