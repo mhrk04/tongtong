@@ -1,13 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import { address, generateKeyPairSigner, type Address } from "@solana/kit";
+import { generateKeyPairSigner, type Address } from "@solana/kit";
 import { useConnectedWallet } from "@solana/kit-plugin-wallet/react";
-import { toast } from "sonner";
 import { useAppClient } from "../../lib/client-provider";
 import { useCluster } from "../cluster-context";
 import { useSend } from "../../lib/hooks/use-send";
 import { ellipsify } from "../../lib/explorer";
+import { parseAddress } from "../../lib/address";
+import {
+  ACTION_CARD_CLASS,
+  ADDRESS_INPUT_CLASS,
+  PRIMARY_BUTTON_CLASS,
+  TEXT_INPUT_CLASS,
+} from "../../lib/ui";
 
 const DECIMALS = 9;
 
@@ -68,13 +74,8 @@ export function TokenCard() {
     const signer = connected?.signer;
     if (!signer || !mint || !recipient) return;
 
-    let destination: Address;
-    try {
-      destination = address(recipient);
-    } catch {
-      toast.error("Invalid recipient address");
-      return;
-    }
+    const destination = parseAddress(recipient, "Invalid recipient address");
+    if (!destination) return;
 
     await run(
       () =>
@@ -92,7 +93,7 @@ export function TokenCard() {
   };
 
   return (
-    <div className="rounded-2xl border border-border-low bg-card p-6">
+    <div className={ACTION_CARD_CLASS}>
       <h2 className="text-sm font-semibold">Token</h2>
       <p className="mt-1 text-xs text-muted">
         Create an SPL token mint, then mint and transfer with the{" "}
@@ -104,7 +105,7 @@ export function TokenCard() {
         <button
           onClick={handleCreateMint}
           disabled={isSending}
-          className="mt-4 w-full cursor-pointer rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-xs transition hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+          className={`mt-4 ${PRIMARY_BUTTON_CLASS}`}
         >
           {isSending ? "Creating..." : `Create mint (${DECIMALS} decimals)`}
         </button>
@@ -130,12 +131,12 @@ export function TokenCard() {
               min="0"
               step="1"
               placeholder="Amount to mint"
-              className="w-full rounded-lg border border-border-low bg-background px-3 py-2 text-sm outline-none focus:border-ring"
+              className={TEXT_INPUT_CLASS}
             />
             <button
               onClick={handleMint}
               disabled={isSending || Number(mintAmount) <= 0}
-              className="w-full cursor-pointer rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-xs transition hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+              className={PRIMARY_BUTTON_CLASS}
             >
               {isSending ? "Working..." : "Mint to my wallet"}
             </button>
@@ -146,7 +147,7 @@ export function TokenCard() {
               value={recipient}
               onChange={(e) => setRecipient(e.target.value)}
               placeholder="Recipient address"
-              className="w-full rounded-lg border border-border-low bg-background px-3 py-2 font-mono text-xs outline-none focus:border-ring"
+              className={ADDRESS_INPUT_CLASS}
             />
             <input
               value={transferAmount}
@@ -155,12 +156,12 @@ export function TokenCard() {
               min="0"
               step="1"
               placeholder="Amount to transfer"
-              className="w-full rounded-lg border border-border-low bg-background px-3 py-2 text-sm outline-none focus:border-ring"
+              className={TEXT_INPUT_CLASS}
             />
             <button
               onClick={handleTransfer}
               disabled={isSending || !recipient || Number(transferAmount) <= 0}
-              className="w-full cursor-pointer rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-xs transition hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+              className={PRIMARY_BUTTON_CLASS}
             >
               {isSending ? "Working..." : "Transfer tokens"}
             </button>

@@ -5,6 +5,7 @@ import { address, lamports } from "@solana/kit";
 import { useConnectedWallet } from "@solana/kit-plugin-wallet/react";
 import { toast } from "sonner";
 import { useAppClient } from "../../lib/client-provider";
+import { ACTION_CARD_CLASS, PRIMARY_BUTTON_CLASS } from "../../lib/ui";
 
 export function AirdropCard() {
   const client = useAppClient();
@@ -31,7 +32,7 @@ export function AirdropCard() {
   };
 
   return (
-    <div className="rounded-2xl border border-border-low bg-card p-6">
+    <div className={ACTION_CARD_CLASS}>
       <h2 className="text-sm font-semibold">Fund wallet</h2>
       <p className="mt-1 text-xs text-muted">
         Request 1 SOL from the faucet so you can try the actions below.
@@ -39,7 +40,7 @@ export function AirdropCard() {
       <button
         onClick={handleAirdrop}
         disabled={busy}
-        className="mt-4 w-full cursor-pointer rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-xs transition hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+        className={`mt-4 ${PRIMARY_BUTTON_CLASS}`}
       >
         {busy ? "Requesting..." : "Airdrop 1 SOL"}
       </button>
