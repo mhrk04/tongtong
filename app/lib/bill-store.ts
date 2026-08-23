@@ -61,6 +61,16 @@ function blobPath(id: string) {
   return `tongtong/bills/${id}.json`;
 }
 
+function coverCreatorShare(bill: Bill) {
+  const creator = bill.participants.find(
+    (participant) => participant.id === "p1"
+  );
+  if (!creator || creator.status !== "pending") return false;
+  creator.status = "paid";
+  creator.paidBy = bill.hostWallet;
+  return true;
+}
+
 async function readBlobBill(id: string) {
   try {
     const result = await get(blobPath(id), {
@@ -80,9 +90,13 @@ async function readBlobBill(id: string) {
 export async function getBill(id: string) {
   if (!blobToken) {
     assertStorageAvailable();
-    return bills.get(id);
+    const bill = bills.get(id);
+    if (bill) coverCreatorShare(bill);
+    return bill;
   }
-  return readBlobBill(id);
+  const bill = await readBlobBill(id);
+  if (bill && coverCreatorShare(bill)) await saveBill(bill);
+  return bill;
 }
 
 export async function saveBill(bill: Bill) {
@@ -148,7 +162,8 @@ export async function createBill(input: {
       name: name.trim() || `Friend ${index + 1}`,
       ...amount,
       paymentReference: `${id}/${participantId}`,
-      status: "pending" as const,
+      status: index === 0 ? ("paid" as const) : ("pending" as const),
+      paidBy: index === 0 ? input.hostWallet : undefined,
     };
   });
 

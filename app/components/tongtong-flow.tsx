@@ -271,7 +271,7 @@ export function TongTongFlow() {
   };
 
   const removeParticipant = (participantId: string) => {
-    if (participants.length <= 2) return;
+    if (participants.length <= 2 || participantId === "p1") return;
     const remaining = participants.filter(
       (participant) => participant.id !== participantId
     );
@@ -446,7 +446,7 @@ export function TongTongFlow() {
               <button
                 type="button"
                 onClick={() => removeParticipant(participant.id)}
-                disabled={participants.length <= 2}
+                disabled={participants.length <= 2 || participant.id === "p1"}
                 aria-label={`Remove ${participant.name}`}
                 className="absolute right-2 top-8 cursor-pointer rounded-lg px-2 py-1 text-xs font-bold text-muted hover:bg-cream disabled:cursor-not-allowed disabled:opacity-30"
               >
@@ -603,6 +603,9 @@ export function BillPayment({
   const assignedItems = currentBill.items.filter((item) =>
     item.assigneeIds.includes(participant.id)
   );
+  const isCoveredByCreator =
+    currentParticipant.status === "paid" &&
+    currentParticipant.paidBy === currentBill.hostWallet;
 
   const verify = async (signature: string) => {
     setIsVerifying(true);
@@ -776,6 +779,10 @@ export function BillPayment({
         >
           Verified on Solana · View transaction
         </a>
+      ) : isCoveredByCreator ? (
+        <div className="rounded-xl bg-green-500/10 px-4 py-3 text-center text-sm font-bold text-green-700 dark:text-green-300">
+          Covered by the bill creator · no payment needed
+        </div>
       ) : (
         <button
           onClick={pay}

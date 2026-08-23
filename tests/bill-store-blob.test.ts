@@ -54,6 +54,36 @@ describe("getBill with Blob storage", () => {
     expect(await getBill(bill.id)).toBeUndefined();
   });
 
+  test("covers a legacy creator share and writes it back", async () => {
+    const legacy: Bill = {
+      ...bill,
+      participants: [
+        {
+          id: "p1",
+          name: "Ada",
+          amountMyr: 30,
+          amountUsdc: 6,
+          amountBaseUnits: "6000000",
+          paymentReference: `${bill.id}/p1`,
+          status: "pending",
+        },
+      ],
+    };
+    get.mockResolvedValue({
+      statusCode: 200,
+      stream: new Response(JSON.stringify(legacy)).body,
+    });
+    put.mockResolvedValue({});
+
+    const stored = await getBill(legacy.id);
+
+    expect(stored?.participants[0]).toMatchObject({
+      status: "paid",
+      paidBy: legacy.hostWallet,
+    });
+    expect(put).toHaveBeenCalledOnce();
+  });
+
   test("wraps read failures in a BillStoreError", async () => {
     get.mockRejectedValue(new Error("network down"));
 

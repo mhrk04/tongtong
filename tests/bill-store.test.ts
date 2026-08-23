@@ -84,10 +84,12 @@ describe("createBill", () => {
     expect(bill.participants[0]).toMatchObject({
       name: "Ada",
       paymentReference: `${bill.id}/p1`,
-      status: "pending",
       amountBaseUnits: "5050000",
     });
-    expect(bill.participants[1].paymentReference).toBe(`${bill.id}/p2`);
+    expect(bill.participants[1]).toMatchObject({
+      paymentReference: `${bill.id}/p2`,
+      status: "pending",
+    });
   });
 
   test("falls back to placeholder names and title", async () => {
@@ -148,5 +150,33 @@ describe("in-memory storage", () => {
 
     await expect(getBill(bill.id)).rejects.toThrow(BillStoreConfigurationError);
     await expect(saveBill(bill)).rejects.toBeInstanceOf(BillStoreError);
+  });
+});
+
+test("the creator's share is covered when the bill is created", async () => {
+  const hostWallet = "11111111111111111111111111111111";
+  const bill = await createBill({
+    title: "Dinner",
+    hostWallet,
+    rate: 5,
+    feePercent: 1,
+    items: [
+      { id: "food", name: "Food", amountMyr: 30, assigneeIds: ["p1", "p2"] },
+    ],
+    participantNames: ["You", "Friend"],
+  });
+
+  expect(bill.participants[0]).toMatchObject({
+    status: "paid",
+    paidBy: hostWallet,
+  });
+  expect(bill.participants[1].status).toBe("pending");
+
+  bill.participants[0].status = "pending";
+  bill.participants[0].paidBy = undefined;
+  const migrated = await getBill(bill.id);
+  expect(migrated?.participants[0]).toMatchObject({
+    status: "paid",
+    paidBy: hostWallet,
   });
 });

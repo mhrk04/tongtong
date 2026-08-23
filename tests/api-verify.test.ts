@@ -17,14 +17,18 @@ const { POST } = await import("../app/api/bills/[billId]/verify/route");
 const HOST_WALLET = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
 const SIGNATURE = "5".repeat(64);
 
+// The creator (p1) is settled at creation time, so payments are verified for
+// p2: a 30 MYR item split two ways at 5 MYR/USDC is 3 USDC.
 async function seedBill() {
   return createBill({
     title: "Dinner",
     hostWallet: HOST_WALLET,
     rate: 5,
     feePercent: 0,
-    items: [{ id: "item-1", name: "Food", amountMyr: 30, assigneeIds: ["p1"] }],
-    participantNames: ["Ada"],
+    items: [
+      { id: "item-1", name: "Food", amountMyr: 30, assigneeIds: ["p1", "p2"] },
+    ],
+    participantNames: ["Ada", "Bob"],
   });
 }
 
@@ -39,7 +43,7 @@ function verify(billId: string, body: unknown) {
 }
 
 function transferTransaction({
-  amount = "6000000",
+  amount = "3000000",
   owner = HOST_WALLET,
   mint = USDC_DEVNET_MINT,
   memo,
@@ -88,7 +92,7 @@ beforeEach(() => {
 describe("POST /api/bills/[billId]/verify", () => {
   test("returns 404 for an unknown bill", async () => {
     const response = await verify("TT-NOPE", {
-      participantId: "p1",
+      participantId: "p2",
       signature: SIGNATURE,
     });
 
@@ -98,7 +102,7 @@ describe("POST /api/bills/[billId]/verify", () => {
 
   test.each([
     ["an unknown participant", { participantId: "p9", signature: SIGNATURE }],
-    ["a missing signature", { participantId: "p1" }],
+    ["a missing signature", { participantId: "p2" }],
   ])("rejects %s", async (_label, body) => {
     const bill = await seedBill();
 
@@ -115,7 +119,7 @@ describe("POST /api/bills/[billId]/verify", () => {
     getTransaction.mockResolvedValue(null);
 
     const response = await verify(bill.id, {
-      participantId: "p1",
+      participantId: "p2",
       signature: SIGNATURE,
     });
 
@@ -129,13 +133,13 @@ describe("POST /api/bills/[billId]/verify", () => {
     const bill = await seedBill();
     getTransaction.mockResolvedValue(
       transferTransaction({
-        memo: bill.participants[0].paymentReference,
+        memo: bill.participants[1].paymentReference,
         err: {},
       })
     );
 
     const response = await verify(bill.id, {
-      participantId: "p1",
+      participantId: "p2",
       signature: SIGNATURE,
     });
 
@@ -155,13 +159,13 @@ describe("POST /api/bills/[billId]/verify", () => {
     const bill = await seedBill();
     getTransaction.mockResolvedValue(
       transferTransaction({
-        memo: bill.participants[0].paymentReference,
+        memo: bill.participants[1].paymentReference,
         ...overrides,
       })
     );
 
     const response = await verify(bill.id, {
-      participantId: "p1",
+      participantId: "p2",
       signature: SIGNATURE,
     });
 
@@ -175,25 +179,25 @@ describe("POST /api/bills/[billId]/verify", () => {
     const bill = await seedBill();
     getTransaction.mockResolvedValue(
       transferTransaction({
-        memo: { memo: bill.participants[0].paymentReference },
+        memo: { memo: bill.participants[1].paymentReference },
       })
     );
 
     const response = await verify(bill.id, {
-      participantId: "p1",
+      participantId: "p2",
       signature: SIGNATURE,
     });
 
     expect(response.status).toBe(200);
     const paid = (await response.json()).bill;
-    expect(paid.participants[0]).toMatchObject({
+    expect(paid.participants[1]).toMatchObject({
       status: "paid",
       signature: SIGNATURE,
     });
 
     getTransaction.mockRejectedValue(new Error("should not be called"));
     const replay = await verify(bill.id, {
-      participantId: "p1",
+      participantId: "p2",
       signature: SIGNATURE,
     });
 
@@ -201,12 +205,46 @@ describe("POST /api/bills/[billId]/verify", () => {
     expect((await replay.json()).bill).toEqual(paid);
   });
 
+  test("rejects a second signature for an already paid share", async () => {
+    const bill = await seedBill();
+    getTransaction.mockResolvedValue(
+      transferTransaction({ memo: bill.participants[1].paymentReference })
+    );
+    await verify(bill.id, { participantId: "p2", signature: SIGNATURE });
+
+    const response = await verify(bill.id, {
+      participantId: "p2",
+      signature: "6".repeat(64),
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: "This bill share is already paid",
+    });
+  });
+
+  test("accepts the creator's share as already covered", async () => {
+    const bill = await seedBill();
+    getTransaction.mockRejectedValue(new Error("should not be called"));
+
+    const response = await verify(bill.id, {
+      participantId: "p1",
+      signature: SIGNATURE,
+    });
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).bill.participants[0]).toMatchObject({
+      status: "paid",
+      paidBy: HOST_WALLET,
+    });
+  });
+
   test("surfaces RPC failures", async () => {
     const bill = await seedBill();
     getTransaction.mockRejectedValue(new Error("rpc unavailable"));
 
     const response = await verify(bill.id, {
-      participantId: "p1",
+      participantId: "p2",
       signature: SIGNATURE,
     });
 

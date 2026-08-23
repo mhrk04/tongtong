@@ -53,8 +53,17 @@ export async function POST(
         { status: 400 }
       );
     }
-    if (participant.status === "paid" && participant.signature === signature) {
-      return Response.json({ bill });
+    if (participant.status === "paid") {
+      if (
+        participant.signature === signature ||
+        participant.paidBy === bill.hostWallet
+      ) {
+        return Response.json({ bill });
+      }
+      return Response.json(
+        { error: "This bill share is already paid" },
+        { status: 409 }
+      );
     }
 
     const transaction = await rpc
