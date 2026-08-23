@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useCallback, useState } from "react";
 import { useCluster, CLUSTERS } from "./cluster-context";
 import type { ClusterMoniker } from "../lib/solana-client";
+import { useClickOutside } from "../lib/hooks/use-click-outside";
 
 const CLUSTER_COLORS: Record<ClusterMoniker, string> = {
   mainnet: "#22c55e",
@@ -14,17 +15,8 @@ const CLUSTER_COLORS: Record<ClusterMoniker, string> = {
 export function ClusterSelect() {
   const { cluster, setCluster } = useCluster();
   const [isOpen, setIsOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setIsOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  const handleClickOutside = useCallback(() => setIsOpen(false), []);
+  const ref = useClickOutside<HTMLDivElement>(handleClickOutside);
 
   return (
     <div className="relative" ref={ref}>

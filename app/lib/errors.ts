@@ -1,5 +1,9 @@
 const UNKNOWN_FAILURE = "The transaction failed for an unknown reason.";
 
+export function errorMessage(err: unknown, fallback: string): string {
+  return err instanceof Error && err.message ? err.message : fallback;
+}
+
 export function parseTransactionError(err: unknown): string {
   const message = getDeepestMessage(err);
   if (message.includes("User rejected")) {

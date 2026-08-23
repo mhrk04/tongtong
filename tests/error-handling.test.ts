@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import {
-  errorResponse,
+  routeErrorResponse,
   UpstreamError,
   ValidationError,
-} from "../app/lib/api-errors";
+} from "../app/lib/api-response";
 import { BillStoreError } from "../app/lib/bill-store";
-import { parseTransactionError } from "../app/lib/errors";
-import { ApiError, errorMessage, fetchJson } from "../app/lib/fetch-json";
+import { errorMessage, parseTransactionError } from "../app/lib/errors";
+import { ApiError, fetchJson } from "../app/lib/fetch-json";
 
 const originalFetch = globalThis.fetch;
 
@@ -27,35 +27,38 @@ function mockFetch(response: Response | Error) {
   ) as typeof fetch;
 }
 
-test("errorResponse maps validation, dependency, and unknown failures", async () => {
-  const validation = errorResponse(
+test("routeErrorResponse maps validation, dependency, and unknown failures", async () => {
+  const validation = routeErrorResponse(
     new ValidationError("Invalid item 2"),
     "Could not create bill"
   );
   expect(validation.status).toBe(400);
   expect(await validation.json()).toEqual({ error: "Invalid item 2" });
 
-  const badJson = errorResponse(new SyntaxError("Unexpected token <"), "nope");
+  const badJson = routeErrorResponse(
+    new SyntaxError("Unexpected token <"),
+    "nope"
+  );
   expect(badJson.status).toBe(400);
   expect(await badJson.json()).toEqual({
     error: "Request body must be valid JSON",
   });
 
-  const storage = errorResponse(
+  const storage = routeErrorResponse(
     new BillStoreError("Bill storage is temporarily unavailable"),
     "nope"
   );
   expect(storage.status).toBe(503);
 
-  const upstream = errorResponse(
+  const upstream = routeErrorResponse(
     new UpstreamError("Devnet unreachable"),
     "nope"
   );
   expect(upstream.status).toBe(502);
 });
 
-test("errorResponse hides unexpected errors behind a 500", async () => {
-  const response = errorResponse(
+test("routeErrorResponse hides unexpected errors behind a 500", async () => {
+  const response = routeErrorResponse(
     new TypeError("bill.participants is not iterable"),
     "Could not verify payment"
   );

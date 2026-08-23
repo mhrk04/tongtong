@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useCallback, useState } from "react";
 import { address, formatDecimalFixedPoint, lamportsToSol } from "@solana/kit";
 import {
   useWallets,
@@ -11,9 +11,12 @@ import {
 } from "@solana/kit-plugin-wallet/react";
 import { toast } from "sonner";
 import { useBalance } from "../lib/hooks/use-balance";
+import { parseTransactionError } from "../lib/errors";
 import { ellipsify } from "../lib/explorer";
 import { useCluster } from "./cluster-context";
 import { useAppClient } from "../lib/client-provider";
+import { useClickOutside } from "../lib/hooks/use-click-outside";
+import { useCopyToClipboard } from "../lib/hooks/use-copy-to-clipboard";
 
 const solFormatter = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 5,
@@ -29,8 +32,14 @@ export function WalletButton() {
 
   const { getExplorerUrl } = useCluster();
   const [isOpen, setIsOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const handleClickOutside = useCallback(() => setIsOpen(false), []);
+  const ref = useClickOutside<HTMLDivElement>(handleClickOutside);
+  const { copied, copy } = useCopyToClipboard({
+    resetDelay: 2000,
+    resetValue: false,
+    onError: () =>
+      toast.error("Could not copy the address. Copy it from the field above."),
+  });
 
   const walletAddress = connected?.account.address;
   const balance = useBalance(
@@ -40,27 +49,9 @@ export function WalletButton() {
   const open = () => setIsOpen(true);
   const close = () => setIsOpen(false);
 
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        close();
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
   const handleCopy = async () => {
     if (!walletAddress) return;
-    try {
-      await navigator.clipboard.writeText(walletAddress);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (error) {
-      // Clipboard API unavailable (insecure origin) or permission denied.
-      console.error(error);
-      toast.error("Could not copy the address. Copy it from the field above.");
-    }
+    await copy(walletAddress, true);
   };
 
   if (!connected) {
@@ -146,10 +137,7 @@ export function WalletButton() {
             </p>
             {balance.error != null && (
               <p role="alert" className="mt-1 text-xs text-destructive">
-                Balance unavailable:{" "}
-                {balance.error instanceof Error
-                  ? balance.error.message
-                  : String(balance.error)}
+                Balance unavailable: {parseTransactionError(balance.error)}
               </p>
             )}
           </div>

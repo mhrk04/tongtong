@@ -6,11 +6,19 @@ import { useConnectedWallet } from "@solana/kit-plugin-wallet/react";
 import { toast } from "sonner";
 import type { Bill, BillItem, BillParticipant } from "../lib/bill-store";
 import { USDC_DEVNET_MINT } from "../lib/bill-store";
+import { billLink, fetchBill, verifyPayment } from "../lib/bill-api";
 import { useAppClient } from "../lib/client-provider";
+import { errorMessage, parseTransactionError } from "../lib/errors";
+import { ApiError, fetchJson } from "../lib/fetch-json";
+import { parseAddress } from "../lib/address";
 import { useSend } from "../lib/hooks/use-send";
 import { useBalance } from "../lib/hooks/use-balance";
-import { ApiError, errorMessage, fetchJson } from "../lib/fetch-json";
-import { parseTransactionError } from "../lib/errors";
+import { useCopyToClipboard } from "../lib/hooks/use-copy-to-clipboard";
+import {
+  FLOW_INPUT_CLASS,
+  FLOW_SECTION_CLASS,
+  statusPillClass,
+} from "../lib/ui";
 
 const formatter = new Intl.NumberFormat("en-MY", {
   minimumFractionDigits: 2,
@@ -42,6 +50,8 @@ const initialItems: DraftItem[] = [
   },
 ];
 
+const MIN_PAYMENT_LAMPORTS = 3_000_000n;
+
 export function calculateQuote(
   total: number,
   people: number,
@@ -59,16 +69,6 @@ export function calculateQuote(
 
 function money(value: number) {
   return formatter.format(Number.isFinite(value) ? value : 0);
-}
-
-function shareLink(billId: string, participantId: string) {
-  if (typeof window === "undefined") return `/bill/${billId}/${participantId}`;
-  return `${window.location.origin}/bill/${billId}/${participantId}`;
-}
-
-function billLink(billId: string) {
-  if (typeof window === "undefined") return `/bill/${billId}`;
-  return `${window.location.origin}/bill/${billId}`;
 }
 
 function QrCode({ value }: { value: string }) {
@@ -90,18 +90,19 @@ export function BillCreated({
   onReset: () => void;
 }) {
   const [currentBill, setCurrentBill] = useState(bill);
-  const [copied, setCopied] = useState<string>();
   const [qrFor, setQrFor] = useState<string>();
   const [refreshError, setRefreshError] = useState<string>();
+  const { copied, copy: copyLink } = useCopyToClipboard<string | undefined>({
+    resetDelay: 1800,
+    resetValue: undefined,
+    onError: () => toast.error("Could not copy the payment link"),
+  });
 
   useEffect(() => {
     let cancelled = false;
     const refresh = async () => {
       try {
-        const { bill: latest } = await fetchJson<{ bill: Bill }>(
-          `/api/bills/${bill.id}`,
-          { cache: "no-store" }
-        );
+        const latest = await fetchBill(bill.id);
         if (cancelled) return;
         setCurrentBill(latest);
         setRefreshError(undefined);
@@ -121,16 +122,7 @@ export function BillCreated({
   }, [bill.id]);
 
   const copy = async (participant: BillParticipant) => {
-    try {
-      await navigator.clipboard.writeText(
-        shareLink(currentBill.id, participant.id)
-      );
-      setCopied(participant.id);
-      window.setTimeout(() => setCopied(undefined), 1800);
-    } catch (error) {
-      console.error(error);
-      toast.error("Could not copy the payment link");
-    }
+    await copyLink(billLink(currentBill.id, participant.id), participant.id);
   };
 
   const paidCount = currentBill.participants.filter(
@@ -138,7 +130,7 @@ export function BillCreated({
   ).length;
 
   return (
-    <section className="space-y-5 rounded-3xl border border-border-low bg-card p-6 shadow-sm sm:p-8">
+    <section className={`space-y-5 ${FLOW_SECTION_CLASS}`}>
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary">
@@ -176,7 +168,7 @@ export function BillCreated({
 
       <div className="grid gap-3 sm:grid-cols-3">
         {currentBill.participants.map((participant) => {
-          const link = shareLink(currentBill.id, participant.id);
+          const link = billLink(currentBill.id, participant.id);
           return (
             <div
               key={participant.id}
@@ -191,7 +183,7 @@ export function BillCreated({
                   </p>
                 </div>
                 <span
-                  className={`rounded-full px-2 py-1 text-[10px] font-bold uppercase ${participant.status === "paid" ? "bg-green-500/10 text-green-700 dark:text-green-300" : "bg-amber-500/10 text-amber-700 dark:text-amber-300"}`}
+                  className={`rounded-full px-2 py-1 text-[10px] font-bold uppercase ${statusPillClass(participant.status)}`}
                 >
                   {participant.status}
                 </span>
@@ -298,7 +290,7 @@ export function TongTongFlow() {
   };
 
   const removeParticipant = (participantId: string) => {
-    if (participants.length <= 2) return;
+    if (participants.length <= 2 || participantId === "p1") return;
     const remaining = participants.filter(
       (participant) => participant.id !== participantId
     );
@@ -384,7 +376,7 @@ export function TongTongFlow() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-3xl border border-border-low bg-card p-6 shadow-sm sm:p-8">
+      <section className={FLOW_SECTION_CLASS}>
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary">
@@ -409,7 +401,7 @@ export function TongTongFlow() {
             <input
               value={title}
               onChange={(event) => setTitle(event.target.value)}
-              className="mt-2 w-full rounded-xl border border-border-low bg-background px-4 py-3 outline-none focus:border-ring"
+              className={`mt-2 w-full ${FLOW_INPUT_CLASS}`}
             />
           </label>
           <label className="block text-sm font-semibold">
@@ -418,7 +410,7 @@ export function TongTongFlow() {
               value={rate}
               onChange={(event) => setRate(event.target.value)}
               inputMode="decimal"
-              className="mt-2 w-full rounded-xl border border-border-low bg-background px-4 py-3 outline-none focus:border-ring"
+              className={`mt-2 w-full ${FLOW_INPUT_CLASS}`}
             />
           </label>
           <label className="block text-sm font-semibold">
@@ -427,13 +419,13 @@ export function TongTongFlow() {
               value={feePercent}
               onChange={(event) => setFeePercent(event.target.value)}
               inputMode="decimal"
-              className="mt-2 w-full rounded-xl border border-border-low bg-background px-4 py-3 outline-none focus:border-ring"
+              className={`mt-2 w-full ${FLOW_INPUT_CLASS}`}
             />
           </label>
         </div>
       </section>
 
-      <section className="rounded-3xl border border-border-low bg-card p-6 shadow-sm sm:p-8">
+      <section className={FLOW_SECTION_CLASS}>
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-muted">
@@ -463,13 +455,13 @@ export function TongTongFlow() {
                       )
                     )
                   }
-                  className="mt-2 w-full rounded-xl border border-border-low bg-background px-4 py-3 pr-10 outline-none focus:border-ring"
+                  className={`mt-2 w-full ${FLOW_INPUT_CLASS} pr-10`}
                 />
               </label>
               <button
                 type="button"
                 onClick={() => removeParticipant(participant.id)}
-                disabled={participants.length <= 2}
+                disabled={participants.length <= 2 || participant.id === "p1"}
                 aria-label={`Remove ${participant.name}`}
                 className="absolute right-2 top-8 cursor-pointer rounded-lg px-2 py-1 text-xs font-bold text-muted hover:bg-cream disabled:cursor-not-allowed disabled:opacity-30"
               >
@@ -487,7 +479,7 @@ export function TongTongFlow() {
         </div>
       </section>
 
-      <section className="rounded-3xl border border-border-low bg-card p-6 shadow-sm sm:p-8">
+      <section className={FLOW_SECTION_CLASS}>
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-muted">
@@ -513,7 +505,7 @@ export function TongTongFlow() {
                     updateItem(item.id, { name: event.target.value })
                   }
                   placeholder="Item name"
-                  className="rounded-xl border border-border-low bg-background px-4 py-3 text-sm outline-none focus:border-ring"
+                  className={`${FLOW_INPUT_CLASS} text-sm`}
                 />
                 <input
                   value={item.amountMyr || ""}
@@ -526,7 +518,7 @@ export function TongTongFlow() {
                   min="0"
                   step="0.01"
                   placeholder="Amount MYR"
-                  className="rounded-xl border border-border-low bg-background px-4 py-3 text-sm outline-none focus:border-ring"
+                  className={`${FLOW_INPUT_CLASS} text-sm`}
                 />
                 <button
                   onClick={() =>
@@ -627,6 +619,9 @@ export function BillPayment({
   const assignedItems = currentBill.items.filter((item) =>
     item.assigneeIds.includes(participant.id)
   );
+  const isCoveredByCreator =
+    currentParticipant.status === "paid" &&
+    currentParticipant.paidBy === currentBill.hostWallet;
 
   const verify = async (signature: string) => {
     setIsVerifying(true);
@@ -634,18 +629,9 @@ export function BillPayment({
     try {
       for (let attempt = 0; attempt < 5; attempt += 1) {
         try {
-          const result = await fetchJson<{ bill: Bill }>(
-            `/api/bills/${currentBill.id}/verify`,
-            {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({
-                participantId: participant.id,
-                signature,
-              }),
-            }
+          setCurrentBill(
+            await verifyPayment(currentBill.id, participant.id, signature)
           );
-          setCurrentBill(result.bill);
           toast.success("Your share is verified and marked paid");
           return;
         } catch (error) {
@@ -689,20 +675,18 @@ export function BillPayment({
       toast.error("Checking your devnet SOL balance. Try again in a moment.");
       return;
     }
-    if (payerBalance.lamports < 3_000_000n) {
+    if (payerBalance.lamports < MIN_PAYMENT_LAMPORTS) {
       toast.error(
         "You need about 0.003 devnet SOL for fees and token-account setup"
       );
       return;
     }
 
-    let recipient;
-    try {
-      recipient = address(currentBill.hostWallet);
-    } catch {
-      toast.error("This bill has an invalid host wallet");
-      return;
-    }
+    const recipient = parseAddress(
+      currentBill.hostWallet,
+      "This bill has an invalid host wallet"
+    );
+    if (!recipient) return;
 
     const sent = await run(() => {
       const transfer = client.token.instructions.transferToATA({
@@ -727,7 +711,7 @@ export function BillPayment({
   };
 
   return (
-    <section className="space-y-6 rounded-3xl border border-border-low bg-card p-6 shadow-sm sm:p-8">
+    <section className={`space-y-6 ${FLOW_SECTION_CLASS}`}>
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary">
@@ -741,7 +725,7 @@ export function BillPayment({
           </p>
         </div>
         <span
-          className={`rounded-full px-3 py-1 text-xs font-bold uppercase ${currentParticipant.status === "paid" ? "bg-green-500/10 text-green-700 dark:text-green-300" : "bg-amber-500/10 text-amber-700 dark:text-amber-300"}`}
+          className={`rounded-full px-3 py-1 text-xs font-bold uppercase ${statusPillClass(currentParticipant.status)}`}
         >
           {currentParticipant.status}
         </span>
@@ -811,7 +795,7 @@ export function BillPayment({
 
       {connected &&
         payerBalance.lamports != null &&
-        payerBalance.lamports < 3_000_000n && (
+        payerBalance.lamports < MIN_PAYMENT_LAMPORTS && (
           <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs leading-relaxed text-amber-800 dark:text-amber-200">
             This wallet has{" "}
             {(Number(payerBalance.lamports) / 1_000_000_000).toFixed(4)} SOL.
@@ -837,6 +821,10 @@ export function BillPayment({
         >
           Verified on Solana · View transaction
         </a>
+      ) : isCoveredByCreator ? (
+        <div className="rounded-xl bg-green-500/10 px-4 py-3 text-center text-sm font-bold text-green-700 dark:text-green-300">
+          Covered by the bill creator · no payment needed
+        </div>
       ) : (
         <button
           onClick={pay}
@@ -845,7 +833,7 @@ export function BillPayment({
             isVerifying ||
             !connected ||
             payerBalance.lamports == null ||
-            payerBalance.lamports < 3_000_000n ||
+            payerBalance.lamports < MIN_PAYMENT_LAMPORTS ||
             BigInt(currentParticipant.amountBaseUnits) <= 0n
           }
           className="w-full cursor-pointer rounded-xl bg-primary px-5 py-3.5 text-sm font-bold text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
@@ -862,7 +850,7 @@ export function BillPayment({
                     ? "SOL balance unavailable"
                     : payerBalance.lamports == null
                       ? "Checking SOL balance..."
-                      : payerBalance.lamports < 3_000_000n
+                      : payerBalance.lamports < MIN_PAYMENT_LAMPORTS
                         ? "Get devnet SOL to pay"
                         : `Pay ${currentParticipant.amountUsdc.toFixed(2)} USDC`}
         </button>

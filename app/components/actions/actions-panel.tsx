@@ -3,6 +3,7 @@
 import { useConnectedWallet } from "@solana/kit-plugin-wallet/react";
 import { useAppClient } from "../../lib/client-provider";
 import { useCluster } from "../cluster-context";
+import { ACTION_CARD_CLASS } from "../../lib/ui";
 import { AirdropCard } from "./airdrop-card";
 import { TransferSolCard } from "./transfer-sol-card";
 import { TokenCard } from "./token-card";
@@ -15,7 +16,7 @@ export function ActionsPanel() {
 
   if (!connected) {
     return (
-      <div className="mt-8 rounded-2xl border border-border-low bg-card p-6 text-sm text-muted">
+      <div className={`mt-8 ${ACTION_CARD_CLASS} text-sm text-muted`}>
         Connect a wallet to try the on-chain actions.
       </div>
     );

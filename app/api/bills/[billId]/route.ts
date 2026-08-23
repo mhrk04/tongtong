@@ -1,5 +1,9 @@
 import { getBill } from "../../../lib/bill-store";
-import { errorResponse } from "../../../lib/api-errors";
+import {
+  NO_STORE_HEADERS,
+  jsonError,
+  routeErrorResponse,
+} from "../../../lib/api-response";
 
 export async function GET(
   _request: Request,
@@ -8,18 +12,9 @@ export async function GET(
   const { billId } = await params;
   try {
     const bill = await getBill(billId);
-    if (!bill)
-      return Response.json(
-        { error: "Bill not found" },
-        { status: 404, headers: { "Cache-Control": "no-store" } }
-      );
-    return Response.json(
-      { bill },
-      { headers: { "Cache-Control": "no-store" } }
-    );
+    if (!bill) return jsonError("Bill not found", 404, NO_STORE_HEADERS);
+    return Response.json({ bill }, { headers: NO_STORE_HEADERS });
   } catch (error) {
-    return errorResponse(error, "Could not load this bill", {
-      headers: { "Cache-Control": "no-store" },
-    });
+    return routeErrorResponse(error, "Bill storage failed", NO_STORE_HEADERS);
   }
 }

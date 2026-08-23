@@ -5,10 +5,11 @@ import {
   saveBill,
 } from "../../../../lib/bill-store";
 import {
-  errorResponse,
+  jsonError,
+  routeErrorResponse,
   UpstreamError,
   ValidationError,
-} from "../../../../lib/api-errors";
+} from "../../../../lib/api-response";
 
 const rpc = createSolanaRpc("https://api.devnet.solana.com");
 
@@ -66,8 +67,7 @@ export async function POST(
 
   try {
     const bill = await getBill(billId);
-    if (!bill)
-      return Response.json({ error: "Bill not found" }, { status: 404 });
+    if (!bill) return jsonError("Bill not found", 404);
 
     const body = await request.json();
     const participant = bill.participants.find(
@@ -78,8 +78,14 @@ export async function POST(
     if (!participant || !signature) {
       throw new ValidationError("Invalid payment details");
     }
-    if (participant.status === "paid" && participant.signature === signature) {
-      return Response.json({ bill });
+    if (participant.status === "paid") {
+      if (
+        participant.signature === signature ||
+        participant.paidBy === bill.hostWallet
+      ) {
+        return Response.json({ bill });
+      }
+      return jsonError("This bill share is already paid", 409);
     }
 
     let transaction;
@@ -109,10 +115,7 @@ export async function POST(
     } | null;
 
     if (!parsed?.meta) {
-      return Response.json(
-        { error: "Transaction is not confirmed yet" },
-        { status: 409 }
-      );
+      return jsonError("Transaction is not confirmed yet", 409);
     }
     if (parsed.meta.err != null) {
       throw new ValidationError("Transaction failed on devnet");
@@ -153,6 +156,6 @@ export async function POST(
     await saveBill(paidBill);
     return Response.json({ bill: paidBill });
   } catch (error) {
-    return errorResponse(error, "Could not verify payment");
+    return routeErrorResponse(error, "Could not verify payment");
   }
 }

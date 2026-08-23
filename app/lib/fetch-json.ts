@@ -66,11 +66,6 @@ export async function fetchJson<T>(
   return payload as T;
 }
 
-export function errorMessage(error: unknown, fallback: string) {
-  if (error instanceof Error && error.message) return error.message;
-  return fallback;
-}
-
 function readErrorMessage(payload: unknown) {
   if (payload && typeof payload === "object") {
     const message = (payload as { error?: unknown }).error;
