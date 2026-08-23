@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useCallback, useState } from "react";
 import { address, formatDecimalFixedPoint, lamportsToSol } from "@solana/kit";
 import {
   useWallets,
@@ -13,6 +13,8 @@ import { useBalance } from "../lib/hooks/use-balance";
 import { ellipsify } from "../lib/explorer";
 import { useCluster } from "./cluster-context";
 import { useAppClient } from "../lib/client-provider";
+import { useClickOutside } from "../lib/hooks/use-click-outside";
+import { useCopyToClipboard } from "../lib/hooks/use-copy-to-clipboard";
 
 const solFormatter = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 5,
@@ -28,8 +30,12 @@ export function WalletButton() {
 
   const { getExplorerUrl } = useCluster();
   const [isOpen, setIsOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const handleClickOutside = useCallback(() => setIsOpen(false), []);
+  const ref = useClickOutside<HTMLDivElement>(handleClickOutside);
+  const { copied, copy } = useCopyToClipboard({
+    resetDelay: 2000,
+    resetValue: false,
+  });
 
   const walletAddress = connected?.account.address;
   const balance = useBalance(
@@ -39,25 +45,9 @@ export function WalletButton() {
   const open = () => setIsOpen(true);
   const close = () => setIsOpen(false);
 
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        close();
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
   const handleCopy = async () => {
     if (!walletAddress) return;
-    try {
-      await navigator.clipboard.writeText(walletAddress);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Clipboard API unavailable (insecure origin) or permission denied.
-    }
+    await copy(walletAddress, true);
   };
 
   if (!connected) {

@@ -4,6 +4,11 @@ import { useState } from "react";
 import { useConnectedWallet } from "@solana/kit-plugin-wallet/react";
 import { useAppClient } from "../../lib/client-provider";
 import { useSend } from "../../lib/hooks/use-send";
+import {
+  ACTION_CARD_CLASS,
+  PRIMARY_BUTTON_CLASS,
+  TEXT_INPUT_CLASS,
+} from "../../lib/ui";
 
 export function MemoCard() {
   const client = useAppClient();
@@ -25,7 +30,7 @@ export function MemoCard() {
   };
 
   return (
-    <div className="rounded-2xl border border-border-low bg-card p-6">
+    <div className={ACTION_CARD_CLASS}>
       <h2 className="text-sm font-semibold">Add memo</h2>
       <p className="mt-1 text-xs text-muted">
         Attach an on-chain note with the SPL Memo program via the
@@ -36,12 +41,12 @@ export function MemoCard() {
           value={memo}
           onChange={(e) => setMemo(e.target.value)}
           placeholder="Your memo"
-          className="w-full rounded-lg border border-border-low bg-background px-3 py-2 text-sm outline-none focus:border-ring"
+          className={TEXT_INPUT_CLASS}
         />
         <button
           onClick={handleMemo}
           disabled={isSending || !memo}
-          className="w-full cursor-pointer rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-xs transition hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+          className={PRIMARY_BUTTON_CLASS}
         >
           {isSending ? "Posting..." : "Post memo"}
         </button>

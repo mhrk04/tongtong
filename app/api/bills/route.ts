@@ -1,5 +1,6 @@
 import { address } from "@solana/kit";
-import { BillStoreError, createBill } from "../../lib/bill-store";
+import { createBill } from "../../lib/bill-store";
+import { routeErrorResponse } from "../../lib/api-response";
 
 export async function POST(request: Request) {
   try {
@@ -90,11 +91,6 @@ export async function POST(request: Request) {
 
     return Response.json({ bill }, { status: 201 });
   } catch (error) {
-    return Response.json(
-      {
-        error: error instanceof Error ? error.message : "Could not create bill",
-      },
-      { status: error instanceof BillStoreError ? 503 : 400 }
-    );
+    return routeErrorResponse(error, "Could not create bill", 400);
   }
 }
