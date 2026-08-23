@@ -49,3 +49,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+review-and-iterate-2026-08-23-self-payment.html
+review-and-iterate-2026-08-23.html
+.superstack/build-context.md
