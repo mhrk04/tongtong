@@ -5,7 +5,11 @@ import {
   USDC_DEVNET_MINT,
   saveBill,
 } from "../../../../lib/bill-store";
-import { jsonError, routeErrorResponse } from "../../../../lib/api-response";
+import {
+  jsonError,
+  routeErrorResponse,
+  UpstreamError,
+} from "../../../../lib/api-response";
 
 const rpc = createSolanaRpc("https://api.devnet.solana.com");
 const SIGNATURE_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{64,90}$/;
@@ -80,13 +84,22 @@ export async function POST(
       return jsonError("This transaction already settled another share", 409);
     }
 
-    const transaction = await rpc
-      .getTransaction(signature as Signature, {
-        commitment: "confirmed",
-        encoding: "jsonParsed",
-        maxSupportedTransactionVersion: 0,
-      })
-      .send();
+    let transaction;
+    try {
+      transaction = await rpc
+        .getTransaction(signature as Signature, {
+          commitment: "confirmed",
+          encoding: "jsonParsed",
+          maxSupportedTransactionVersion: 0,
+        })
+        .send();
+    } catch (cause) {
+      // The payer's request is fine; devnet is not answering.
+      throw new UpstreamError(
+        "Could not reach Solana devnet to verify this payment. Retry in a moment.",
+        { cause }
+      );
+    }
     const parsed = transaction as unknown as {
       meta?: {
         err?: unknown;
@@ -129,11 +142,19 @@ export async function POST(
       );
     }
 
-    participant.status = "paid";
-    participant.signature = signature;
-    await saveBill(bill);
-    return Response.json({ bill });
+    // Only report the share as paid once the store has accepted it, so a
+    // storage failure cannot leave the in-memory bill claiming otherwise.
+    const paidBill = {
+      ...bill,
+      participants: bill.participants.map((candidate) =>
+        candidate.id === participant.id
+          ? { ...candidate, status: "paid" as const, signature }
+          : candidate
+      ),
+    };
+    await saveBill(paidBill);
+    return Response.json({ bill: paidBill });
   } catch (error) {
-    return routeErrorResponse(error, "Could not verify payment", 400);
+    return routeErrorResponse(error, "Could not verify payment");
   }
 }

@@ -242,7 +242,7 @@ describe("POST /api/bills/[billId]/verify", () => {
     });
   });
 
-  test("does not leak RPC failure details", async () => {
+  test("surfaces RPC failures as a bad gateway without leaking details", async () => {
     const bill = await seedBill();
     getTransaction.mockRejectedValue(new Error("rpc unavailable"));
 
@@ -251,9 +251,10 @@ describe("POST /api/bills/[billId]/verify", () => {
       signature: SIGNATURE,
     });
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(502);
     expect(await response.json()).toEqual({
-      error: "Could not verify payment",
+      error:
+        "Could not reach Solana devnet to verify this payment. Retry in a moment.",
     });
   });
 });

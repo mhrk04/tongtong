@@ -3,17 +3,13 @@
 import { useEffect, useState } from "react";
 import type { Bill } from "./bill-store";
 import { errorMessage } from "./errors";
-
-type BillApiResult = {
-  bill?: Bill;
-  error?: string;
-};
+import { fetchJson } from "./fetch-json";
 
 export async function fetchBill(billId: string): Promise<Bill> {
-  const response = await fetch(`/api/bills/${billId}`, { cache: "no-store" });
-  const result = (await response.json()) as BillApiResult;
-  if (!response.ok) throw new Error(result.error ?? "Bill not found");
-  return result.bill as Bill;
+  const { bill } = await fetchJson<{ bill: Bill }>(`/api/bills/${billId}`, {
+    cache: "no-store",
+  });
+  return bill;
 }
 
 export function useBill(billId: string) {
@@ -21,11 +17,18 @@ export function useBill(billId: string) {
   const [error, setError] = useState<string>();
 
   useEffect(() => {
+    let cancelled = false;
     fetchBill(billId)
-      .then(setBill)
-      .catch((reason: unknown) =>
-        setError(errorMessage(reason, "Bill not found"))
-      );
+      .then((result) => {
+        if (!cancelled) setBill(result);
+      })
+      .catch((reason: unknown) => {
+        console.error(reason);
+        if (!cancelled) setError(errorMessage(reason, "Bill not found"));
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [billId]);
 
   return { bill, error };
@@ -36,13 +39,15 @@ export async function verifyPayment(
   participantId: string,
   signature: string
 ) {
-  const response = await fetch(`/api/bills/${billId}/verify`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ participantId, signature }),
-  });
-  const result = (await response.json()) as BillApiResult;
-  return { ok: response.ok, status: response.status, result };
+  const { bill } = await fetchJson<{ bill: Bill }>(
+    `/api/bills/${billId}/verify`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ participantId, signature }),
+    }
+  );
+  return bill;
 }
 
 export function billLink(billId: string, participantId?: string) {

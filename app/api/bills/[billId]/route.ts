@@ -18,11 +18,6 @@ export async function GET(
     if (!bill) return jsonError("Bill not found", 404, NO_STORE_HEADERS);
     return Response.json({ bill }, { headers: NO_STORE_HEADERS });
   } catch (error) {
-    return routeErrorResponse(
-      error,
-      "Bill storage failed",
-      500,
-      NO_STORE_HEADERS
-    );
+    return routeErrorResponse(error, "Bill storage failed", NO_STORE_HEADERS);
   }
 }

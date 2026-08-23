@@ -9,7 +9,9 @@ import {
   useConnectedWallet,
   useWalletStatus,
 } from "@solana/kit-plugin-wallet/react";
+import { toast } from "sonner";
 import { useBalance } from "../lib/hooks/use-balance";
+import { parseTransactionError } from "../lib/errors";
 import { ellipsify } from "../lib/explorer";
 import { useCluster } from "./cluster-context";
 import { useAppClient } from "../lib/client-provider";
@@ -35,6 +37,8 @@ export function WalletButton() {
   const { copied, copy } = useCopyToClipboard({
     resetDelay: 2000,
     resetValue: false,
+    onError: () =>
+      toast.error("Could not copy the address. Copy it from the field above."),
   });
 
   const walletAddress = connected?.account.address;
@@ -131,6 +135,11 @@ export function WalletButton() {
                 : "—"}{" "}
               <span className="text-sm font-normal text-muted">SOL</span>
             </p>
+            {balance.error != null && (
+              <p role="alert" className="mt-1 text-xs text-destructive">
+                Balance unavailable: {parseTransactionError(balance.error)}
+              </p>
+            )}
           </div>
 
           <div className="mb-3 rounded-lg border border-border-low bg-cream/50 px-3 py-2">

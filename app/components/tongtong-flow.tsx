@@ -8,7 +8,8 @@ import type { Bill, BillItem, BillParticipant } from "../lib/bill-store";
 import { USDC_DEVNET_MINT } from "../lib/bill-store";
 import { billLink, fetchBill, verifyPayment } from "../lib/bill-api";
 import { useAppClient } from "../lib/client-provider";
-import { errorMessage } from "../lib/errors";
+import { errorMessage, parseTransactionError } from "../lib/errors";
+import { ApiError, fetchJson } from "../lib/fetch-json";
 import { parseAddress } from "../lib/address";
 import { useSend } from "../lib/hooks/use-send";
 import { useBalance } from "../lib/hooks/use-balance";
@@ -90,6 +91,7 @@ export function BillCreated({
 }) {
   const [currentBill, setCurrentBill] = useState(bill);
   const [qrFor, setQrFor] = useState<string>();
+  const [refreshError, setRefreshError] = useState<string>();
   const { copied, copy: copyLink } = useCopyToClipboard<string | undefined>({
     resetDelay: 1800,
     resetValue: undefined,
@@ -97,15 +99,26 @@ export function BillCreated({
   });
 
   useEffect(() => {
+    let cancelled = false;
     const refresh = async () => {
       try {
-        setCurrentBill(await fetchBill(bill.id));
-      } catch {
-        // Polling failures are ignored; the next tick retries.
+        const latest = await fetchBill(bill.id);
+        if (cancelled) return;
+        setCurrentBill(latest);
+        setRefreshError(undefined);
+      } catch (error) {
+        if (cancelled) return;
+        console.error(error);
+        setRefreshError(
+          errorMessage(error, "Could not refresh the payment status")
+        );
       }
     };
     const interval = window.setInterval(refresh, 2500);
-    return () => window.clearInterval(interval);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
   }, [bill.id]);
 
   const copy = async (participant: BillParticipant) => {
@@ -136,6 +149,14 @@ export function BillCreated({
           >
             Host status link · refresh-safe
           </a>
+          {refreshError && (
+            <p
+              role="status"
+              className="mt-2 text-xs font-semibold text-destructive"
+            >
+              {refreshError} · showing the last known status.
+            </p>
+          )}
         </div>
         <button
           onClick={onReset}
@@ -328,7 +349,7 @@ export function TongTongFlow() {
 
     setIsCreating(true);
     try {
-      const response = await fetch("/api/bills", {
+      const result = await fetchJson<{ bill: Bill }>("/api/bills", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -340,12 +361,10 @@ export function TongTongFlow() {
           participantNames: participants.map((participant) => participant.name),
         }),
       });
-      const result = await response.json();
-      if (!response.ok)
-        throw new Error(result.error ?? "Could not create bill");
       setBill(result.bill);
       toast.success("Bill created. Share a friend link.");
     } catch (error) {
+      console.error(error);
       toast.error(errorMessage(error, "Could not create bill"));
     } finally {
       setIsCreating(false);
@@ -588,6 +607,7 @@ export function BillPayment({
   const { run, isSending } = useSend();
   const [currentBill, setCurrentBill] = useState(bill);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [verifyError, setVerifyError] = useState<string>();
   const payerBalance = useBalance(
     connected?.account.address ? address(connected.account.address) : undefined
   );
@@ -605,27 +625,32 @@ export function BillPayment({
 
   const verify = async (signature: string) => {
     setIsVerifying(true);
+    setVerifyError(undefined);
     try {
       for (let attempt = 0; attempt < 5; attempt += 1) {
-        const result = await verifyPayment(
-          currentBill.id,
-          participant.id,
-          signature
-        );
-        if (result.ok) {
-          setCurrentBill(result.result.bill as Bill);
+        try {
+          setCurrentBill(
+            await verifyPayment(currentBill.id, participant.id, signature)
+          );
           toast.success("Your share is verified and marked paid");
           return;
+        } catch (error) {
+          // 409 means devnet has not surfaced the transaction yet; anything
+          // else is a real failure the payer has to see.
+          if (!(error instanceof ApiError) || error.status !== 409) throw error;
         }
-        if (result.status !== 409)
-          throw new Error(result.result.error ?? "Payment verification failed");
         await new Promise((resolve) => window.setTimeout(resolve, 900));
       }
       throw new Error(
         "Transaction is still syncing. Refresh this page in a moment."
       );
     } catch (error) {
-      toast.error(errorMessage(error, "Payment verification failed"));
+      console.error(error);
+      const message = errorMessage(error, "Payment verification failed");
+      // The transfer already landed on devnet, so the failure has to stay
+      // visible after the toast times out.
+      setVerifyError(message);
+      toast.error(message);
     } finally {
       setIsVerifying(false);
     }
@@ -638,6 +663,12 @@ export function BillPayment({
     }
     if (!connected?.signer) {
       toast.error("Connect the wallet that will pay this share");
+      return;
+    }
+    if (payerBalance.error) {
+      toast.error(
+        `Could not read your devnet SOL balance: ${parseTransactionError(payerBalance.error)}`
+      );
       return;
     }
     if (payerBalance.lamports == null) {
@@ -742,6 +773,26 @@ export function BillPayment({
         reference before marking you paid.
       </div>
 
+      {verifyError && (
+        <div
+          role="alert"
+          className="rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-xs leading-relaxed text-destructive"
+        >
+          {verifyError} Your transfer may already be on devnet — refresh this
+          page before paying again.
+        </div>
+      )}
+
+      {connected && payerBalance.error != null && (
+        <div
+          role="alert"
+          className="rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-xs leading-relaxed text-destructive"
+        >
+          Could not read this wallet&apos;s devnet SOL balance:{" "}
+          {parseTransactionError(payerBalance.error)} Reload the page to retry.
+        </div>
+      )}
+
       {connected &&
         payerBalance.lamports != null &&
         payerBalance.lamports < MIN_PAYMENT_LAMPORTS && (
@@ -795,11 +846,13 @@ export function BillPayment({
                 ? "No items assigned"
                 : !connected
                   ? "Connect wallet to pay"
-                  : payerBalance.lamports == null
-                    ? "Checking SOL balance..."
-                    : payerBalance.lamports < MIN_PAYMENT_LAMPORTS
-                      ? "Get devnet SOL to pay"
-                      : `Pay ${currentParticipant.amountUsdc.toFixed(2)} USDC`}
+                  : payerBalance.error != null
+                    ? "SOL balance unavailable"
+                    : payerBalance.lamports == null
+                      ? "Checking SOL balance..."
+                      : payerBalance.lamports < MIN_PAYMENT_LAMPORTS
+                        ? "Get devnet SOL to pay"
+                        : `Pay ${currentParticipant.amountUsdc.toFixed(2)} USDC`}
         </button>
       )}
       <p className="text-center text-xs text-muted">

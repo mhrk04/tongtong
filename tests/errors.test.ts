@@ -33,7 +33,7 @@ describe("parseTransactionError", () => {
     const error: Record<string, unknown> = { message: "cyclic" };
     error.cause = error;
 
-    expect(parseTransactionError(error)).toBe(String(error));
+    expect(parseTransactionError(error)).toBe("cyclic");
   });
 
   test("explains insufficient funds from the deepest cause", () => {
@@ -62,7 +62,9 @@ describe("parseTransactionError", () => {
 
   test("stringifies non-Error values", () => {
     expect(parseTransactionError("boom")).toBe("boom");
-    expect(parseTransactionError(undefined)).toBe("undefined");
+    expect(parseTransactionError(undefined)).toBe(
+      "The transaction failed for an unknown reason."
+    );
   });
 
   test("truncates long messages", () => {

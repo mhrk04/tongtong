@@ -1,6 +1,10 @@
 import { address } from "@solana/kit";
 import { createBill } from "../../lib/bill-store";
-import { jsonError, routeErrorResponse } from "../../lib/api-response";
+import {
+  jsonError,
+  routeErrorResponse,
+  ValidationError,
+} from "../../lib/api-response";
 
 const MAX_BODY_BYTES = 32_000;
 const MAX_TITLE_LENGTH = 120;
@@ -10,8 +14,6 @@ const MAX_AMOUNT_MYR = 1_000_000;
 const MAX_RATE = 1_000_000;
 const MAX_FEE_PERCENT = 100;
 
-class InvalidBillInputError extends Error {}
-
 export async function POST(request: Request) {
   try {
     const raw = await request.text();
@@ -19,6 +21,9 @@ export async function POST(request: Request) {
       return jsonError("Bill is too large", 413);
     }
     const body = JSON.parse(raw);
+    if (body === null || typeof body !== "object") {
+      return jsonError("Invalid bill details", 400);
+    }
     const participantNames = body.participantNames;
     const items = body.items;
     const rate = Number(body.rate);
@@ -48,7 +53,11 @@ export async function POST(request: Request) {
       return jsonError("Invalid bill details", 400);
     }
 
-    address(body.hostWallet);
+    try {
+      address(body.hostWallet);
+    } catch (cause) {
+      throw new ValidationError("Invalid host wallet address", { cause });
+    }
 
     const normalizedItems = items.map((item: unknown, index: number) => {
       const candidate = item as Record<string, unknown>;
@@ -68,7 +77,7 @@ export async function POST(request: Request) {
         assigneeIds.length === 0 ||
         assigneeIds.length > participantNames.length
       ) {
-        throw new InvalidBillInputError(`Invalid item ${index + 1}`);
+        throw new ValidationError(`Invalid item ${index + 1}`);
       }
 
       return {
@@ -114,9 +123,6 @@ export async function POST(request: Request) {
 
     return Response.json({ bill }, { status: 201 });
   } catch (error) {
-    if (error instanceof InvalidBillInputError) {
-      return jsonError(error.message, 400);
-    }
-    return routeErrorResponse(error, "Invalid bill details", 400);
+    return routeErrorResponse(error, "Could not create bill");
   }
 }
