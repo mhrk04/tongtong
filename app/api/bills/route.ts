@@ -1,9 +1,23 @@
 import { address } from "@solana/kit";
 import { BillStoreError, createBill } from "../../lib/bill-store";
 
+const MAX_BODY_BYTES = 32_000;
+const MAX_TITLE_LENGTH = 120;
+const MAX_NAME_LENGTH = 60;
+const MAX_ITEM_NAME_LENGTH = 80;
+const MAX_AMOUNT_MYR = 1_000_000;
+const MAX_RATE = 1_000_000;
+const MAX_FEE_PERCENT = 100;
+
+class InvalidBillInputError extends Error {}
+
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
+    const raw = await request.text();
+    if (raw.length > MAX_BODY_BYTES) {
+      return Response.json({ error: "Bill is too large" }, { status: 413 });
+    }
+    const body = JSON.parse(raw);
     const participantNames = body.participantNames;
     const items = body.items;
     const rate = Number(body.rate);
@@ -11,6 +25,7 @@ export async function POST(request: Request) {
 
     if (
       typeof body.title !== "string" ||
+      body.title.length > MAX_TITLE_LENGTH ||
       typeof body.hostWallet !== "string" ||
       !Array.isArray(participantNames) ||
       participantNames.length < 2 ||
@@ -18,10 +33,16 @@ export async function POST(request: Request) {
       !Array.isArray(items) ||
       items.length < 1 ||
       items.length > 50 ||
+      participantNames.some(
+        (name: unknown) =>
+          typeof name !== "string" || name.length > MAX_NAME_LENGTH
+      ) ||
       !Number.isFinite(rate) ||
       rate <= 0 ||
+      rate > MAX_RATE ||
       !Number.isFinite(feePercent) ||
-      feePercent < 0
+      feePercent < 0 ||
+      feePercent > MAX_FEE_PERCENT
     ) {
       return Response.json({ error: "Invalid bill details" }, { status: 400 });
     }
@@ -36,19 +57,22 @@ export async function POST(request: Request) {
 
       if (
         !name ||
+        name.length > MAX_ITEM_NAME_LENGTH ||
         !Number.isFinite(amountMyr) ||
         amountMyr <= 0 ||
+        amountMyr > MAX_AMOUNT_MYR ||
         !Array.isArray(assigneeIds) ||
-        assigneeIds.length === 0
+        assigneeIds.length === 0 ||
+        assigneeIds.length > participantNames.length
       ) {
-        throw new Error(`Invalid item ${index + 1}`);
+        throw new InvalidBillInputError(`Invalid item ${index + 1}`);
       }
 
       return {
         id: `item-${index + 1}`,
         name,
         amountMyr,
-        assigneeIds: assigneeIds.map(String),
+        assigneeIds: [...new Set(assigneeIds.map(String))],
       };
     });
 
@@ -90,11 +114,13 @@ export async function POST(request: Request) {
 
     return Response.json({ bill }, { status: 201 });
   } catch (error) {
-    return Response.json(
-      {
-        error: error instanceof Error ? error.message : "Could not create bill",
-      },
-      { status: error instanceof BillStoreError ? 503 : 400 }
-    );
+    if (error instanceof BillStoreError) {
+      return Response.json({ error: error.message }, { status: 503 });
+    }
+    if (error instanceof InvalidBillInputError) {
+      return Response.json({ error: error.message }, { status: 400 });
+    }
+    console.error("Bill creation failed", error);
+    return Response.json({ error: "Invalid bill details" }, { status: 400 });
   }
 }

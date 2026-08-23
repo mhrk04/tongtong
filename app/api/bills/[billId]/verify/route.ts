@@ -2,11 +2,13 @@ import { createSolanaRpc, type Signature } from "@solana/kit";
 import {
   BillStoreError,
   getBill,
+  isValidBillId,
   USDC_DEVNET_MINT,
   saveBill,
 } from "../../../../lib/bill-store";
 
 const rpc = createSolanaRpc("https://api.devnet.solana.com");
+const SIGNATURE_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{64,90}$/;
 
 type TokenBalance = {
   owner?: string;
@@ -16,8 +18,16 @@ type TokenBalance = {
 
 type ParsedInstruction = {
   program?: string;
-  parsed?: unknown;
+  parsed?: string | { info?: string | { memo?: string } };
 };
+
+function readMemo(instruction: ParsedInstruction) {
+  const { parsed } = instruction;
+  if (typeof parsed === "string") return parsed;
+  const info = parsed?.info;
+  if (typeof info === "string") return info;
+  return info?.memo;
+}
 
 function sumOwnerBalance(
   balances: TokenBalance[] | undefined,
@@ -35,6 +45,9 @@ export async function POST(
   { params }: { params: Promise<{ billId: string }> }
 ) {
   const { billId } = await params;
+  if (!isValidBillId(billId)) {
+    return Response.json({ error: "Bill not found" }, { status: 404 });
+  }
 
   try {
     const bill = await getBill(billId);
@@ -47,7 +60,7 @@ export async function POST(
     );
     const signature = String(body.signature ?? "");
 
-    if (!participant || !signature) {
+    if (!participant || !SIGNATURE_PATTERN.test(signature)) {
       return Response.json(
         { error: "Invalid payment details" },
         { status: 400 }
@@ -55,6 +68,17 @@ export async function POST(
     }
     if (participant.status === "paid" && participant.signature === signature) {
       return Response.json({ bill });
+    }
+    if (
+      bill.participants.some(
+        (candidate) =>
+          candidate.id !== participant.id && candidate.signature === signature
+      )
+    ) {
+      return Response.json(
+        { error: "This transaction already settled another share" },
+        { status: 409 }
+      );
     }
 
     const transaction = await rpc
@@ -102,10 +126,7 @@ export async function POST(
     const memoMatches = (parsed.transaction?.message?.instructions ?? []).some(
       (instruction) =>
         instruction.program === "spl-memo" &&
-        (instruction.parsed === participant.paymentReference ||
-          JSON.stringify(instruction.parsed).includes(
-            participant.paymentReference
-          ))
+        readMemo(instruction)?.trim() === participant.paymentReference
     );
 
     if (after - before !== expected || !memoMatches) {
@@ -120,12 +141,13 @@ export async function POST(
     await saveBill(bill);
     return Response.json({ bill });
   } catch (error) {
+    if (error instanceof BillStoreError) {
+      return Response.json({ error: error.message }, { status: 503 });
+    }
+    console.error("Payment verification failed", error);
     return Response.json(
-      {
-        error:
-          error instanceof Error ? error.message : "Could not verify payment",
-      },
-      { status: error instanceof BillStoreError ? 503 : 400 }
+      { error: "Could not verify payment" },
+      { status: 400 }
     );
   }
 }

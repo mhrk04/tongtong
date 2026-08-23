@@ -1,5 +1,21 @@
 import { expect, test } from "vitest";
-import { calculateParticipantAmount } from "../app/lib/bill-store";
+import {
+  calculateParticipantAmount,
+  getBill,
+  isValidBillId,
+} from "../app/lib/bill-store";
+
+test("rejects bill ids outside the generated format", () => {
+  expect(isValidBillId("TT-A1B2C3D4")).toBe(true);
+  expect(isValidBillId("TT-A1B2C3D4E5F60718")).toBe(true);
+  expect(isValidBillId("../../secrets")).toBe(false);
+  expect(isValidBillId("TT-../../secrets")).toBe(false);
+  expect(isValidBillId("tt-a1b2c3d4")).toBe(false);
+});
+
+test("does not read storage for traversal ids", async () => {
+  await expect(getBill("../../secrets")).rejects.toThrow("Invalid bill id");
+});
 
 test("calculates itemized shares and applies the fee", () => {
   const items = [
