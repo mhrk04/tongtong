@@ -3,13 +3,18 @@ import type { Bill } from "../app/lib/bill-store";
 
 const get = vi.fn();
 const put = vi.fn();
+class MockBlobPreconditionFailedError extends Error {}
 
-vi.mock("@vercel/blob", () => ({ get, put }));
+vi.mock("@vercel/blob", () => ({
+  BlobPreconditionFailedError: MockBlobPreconditionFailedError,
+  get,
+  put,
+}));
 
 // The store reads its token once at import time, so it has to be set before
 // the dynamic import below to exercise the Blob-backed code path.
 process.env.BLOB_READ_WRITE_TOKEN = "test-token";
-const { BillStoreError, getBill, saveBill } =
+const { BillStoreError, getBill, saveBill, settleBillShare } =
   await import("../app/lib/bill-store");
 
 const bill: Bill = {
@@ -34,6 +39,7 @@ describe("getBill with Blob storage", () => {
     get.mockResolvedValue({
       statusCode: 200,
       stream: new Response(JSON.stringify(bill)).body,
+      blob: { etag: "etag-1" },
     });
 
     expect(await getBill(bill.id)).toEqual(bill);
@@ -72,6 +78,7 @@ describe("getBill with Blob storage", () => {
     get.mockResolvedValue({
       statusCode: 200,
       stream: new Response(JSON.stringify(legacy)).body,
+      blob: { etag: "etag-legacy" },
     });
     put.mockResolvedValue({});
 
@@ -117,4 +124,39 @@ describe("saveBill with Blob storage", () => {
       new BillStoreError("Bill storage is temporarily unavailable")
     );
   });
+});
+
+test("settles a Blob-backed share with an ETag precondition", async () => {
+  const pending = {
+    ...bill,
+    participants: [
+      {
+        id: "p2",
+        name: "Bob",
+        amountMyr: 30,
+        amountUsdc: 6,
+        amountBaseUnits: "6000000",
+        paymentReference: `${bill.id}/p2`,
+        status: "pending" as const,
+      },
+    ],
+  };
+  get.mockResolvedValue({
+    statusCode: 200,
+    stream: new Response(JSON.stringify(pending)).body,
+    blob: { etag: "etag-pending" },
+  });
+  put.mockResolvedValue({});
+
+  const settled = await settleBillShare(bill.id, "p2", "5".repeat(64));
+
+  expect(settled?.bill.participants[0]).toMatchObject({
+    status: "paid",
+    signature: "5".repeat(64),
+  });
+  expect(put).toHaveBeenCalledWith(
+    "tongtong/bills/TT-B10B0001.json",
+    expect.stringContaining('"status":"paid"'),
+    expect.objectContaining({ ifMatch: "etag-pending" })
+  );
 });

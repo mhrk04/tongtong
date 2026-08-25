@@ -1,4 +1,4 @@
-import { get, put } from "@vercel/blob";
+import { BlobPreconditionFailedError, get, put } from "@vercel/blob";
 
 export const USDC_DEVNET_MINT = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
 
@@ -96,6 +96,7 @@ function coverCreatorShare(bill: Bill) {
 
 async function readBlobBill(id: string) {
   let serialized: string;
+  let etag: string;
   try {
     const result = await get(blobPath(id), {
       access: "private",
@@ -105,6 +106,7 @@ async function readBlobBill(id: string) {
     if (!result || result.statusCode !== 200 || !result.stream) {
       return undefined;
     }
+    etag = result.blob.etag;
     serialized = await new Response(result.stream).text();
   } catch (cause) {
     throw new BillStoreError("Bill storage is temporarily unavailable", {
@@ -113,7 +115,7 @@ async function readBlobBill(id: string) {
   }
 
   try {
-    return JSON.parse(serialized) as Bill;
+    return { bill: JSON.parse(serialized) as Bill, etag };
   } catch (cause) {
     throw new BillStoreError(`Stored bill ${id} is corrupted`, { cause });
   }
@@ -127,9 +129,9 @@ export async function getBill(id: string) {
     if (bill) coverCreatorShare(bill);
     return bill;
   }
-  const bill = await readBlobBill(id);
-  if (bill && coverCreatorShare(bill)) await saveBill(bill);
-  return bill;
+  const stored = await readBlobBill(id);
+  if (stored && coverCreatorShare(stored.bill)) await saveBill(stored.bill);
+  return stored?.bill;
 }
 
 export async function saveBill(bill: Bill) {
@@ -153,6 +155,68 @@ export async function saveBill(bill: Bill) {
     });
   }
   return bill;
+}
+
+export async function settleBillShare(
+  billId: string,
+  participantId: string,
+  signature: string
+) {
+  assertValidBillId(billId);
+
+  if (!blobToken) {
+    assertStorageAvailable();
+    const bill = bills.get(billId);
+    const participant = bill?.participants.find(
+      (candidate) => candidate.id === participantId
+    );
+    if (!bill || !participant) return undefined;
+    if (participant.status === "paid") {
+      return { bill, replay: participant.signature === signature };
+    }
+    participant.status = "paid";
+    participant.signature = signature;
+    return { bill, replay: false };
+  }
+
+  const stored = await readBlobBill(billId);
+  const participant = stored?.bill.participants.find(
+    (candidate) => candidate.id === participantId
+  );
+  if (!stored || !participant) return undefined;
+  if (participant.status === "paid") {
+    return { bill: stored.bill, replay: participant.signature === signature };
+  }
+
+  const settledBill = {
+    ...stored.bill,
+    participants: stored.bill.participants.map((candidate) =>
+      candidate.id === participantId
+        ? { ...candidate, status: "paid" as const, signature }
+        : candidate
+    ),
+  };
+  try {
+    await put(blobPath(billId), JSON.stringify(settledBill), {
+      access: "private",
+      allowOverwrite: true,
+      contentType: "application/json",
+      ifMatch: stored.etag,
+      token: blobToken,
+    });
+    return { bill: settledBill, replay: false };
+  } catch (error) {
+    if (!(error instanceof BlobPreconditionFailedError)) throw error;
+    const latest = await readBlobBill(billId);
+    const latestParticipant = latest?.bill.participants.find(
+      (candidate) => candidate.id === participantId
+    );
+    if (!latest || !latestParticipant) return undefined;
+    return {
+      bill: latest.bill,
+      replay: latestParticipant.signature === signature,
+    };
+  }
 }
 
 export function calculateParticipantAmount(

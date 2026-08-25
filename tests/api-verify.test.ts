@@ -223,6 +223,35 @@ describe("POST /api/bills/[billId]/verify", () => {
     });
   });
 
+  test("does not settle the same share twice concurrently", async () => {
+    const bill = await seedBill();
+    let releaseRpc!: () => void;
+    const rpcBlocked = new Promise<void>((resolve) => {
+      releaseRpc = resolve;
+    });
+    getTransaction.mockImplementation(async () => {
+      await rpcBlocked;
+      return transferTransaction({
+        memo: bill.participants[1].paymentReference,
+      });
+    });
+
+    const first = verify(bill.id, {
+      participantId: "p2",
+      signature: SIGNATURE,
+    });
+    const second = verify(bill.id, {
+      participantId: "p2",
+      signature: "6".repeat(64),
+    });
+    releaseRpc();
+
+    const responses = await Promise.all([first, second]);
+    expect(responses.map((response) => response.status).sort()).toEqual([
+      200, 409,
+    ]);
+  });
+
   test("rejects a signature for the creator's covered share", async () => {
     const bill = await seedBill();
     getTransaction.mockRejectedValue(new Error("should not be called"));

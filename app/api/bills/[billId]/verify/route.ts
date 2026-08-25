@@ -3,7 +3,7 @@ import {
   getBill,
   isValidBillId,
   USDC_DEVNET_MINT,
-  saveBill,
+  settleBillShare,
 } from "../../../../lib/bill-store";
 import {
   jsonError,
@@ -144,16 +144,17 @@ export async function POST(
 
     // Only report the share as paid once the store has accepted it, so a
     // storage failure cannot leave the in-memory bill claiming otherwise.
-    const paidBill = {
-      ...bill,
-      participants: bill.participants.map((candidate) =>
-        candidate.id === participant.id
-          ? { ...candidate, status: "paid" as const, signature }
-          : candidate
-      ),
-    };
-    await saveBill(paidBill);
-    return Response.json({ bill: paidBill });
+    const settled = await settleBillShare(billId, participant.id, signature);
+    if (!settled) return jsonError("Bill not found", 404);
+    if (
+      !settled.replay &&
+      settled.bill.participants.find(
+        (candidate) => candidate.id === participant.id
+      )?.signature !== signature
+    ) {
+      return jsonError("This bill share is already paid", 409);
+    }
+    return Response.json({ bill: settled.bill });
   } catch (error) {
     return routeErrorResponse(error, "Could not verify payment");
   }
