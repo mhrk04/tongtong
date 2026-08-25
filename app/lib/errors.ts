@@ -1,10 +1,22 @@
+import {
+  isSolanaError,
+  SOLANA_ERROR__BLOCK_HEIGHT_EXCEEDED,
+} from "@solana/kit";
+
 const UNKNOWN_FAILURE = "The transaction failed for an unknown reason.";
+
+export function isBlockhashExpired(err: unknown) {
+  return isSolanaError(err, SOLANA_ERROR__BLOCK_HEIGHT_EXCEEDED);
+}
 
 export function errorMessage(err: unknown, fallback: string): string {
   return err instanceof Error && err.message ? err.message : fallback;
 }
 
 export function parseTransactionError(err: unknown): string {
+  if (isBlockhashExpired(err)) {
+    return "The transaction expired before reaching Solana. Please try again.";
+  }
   const message = getDeepestMessage(err);
   if (message.includes("User rejected")) {
     return "Transaction was rejected by the wallet.";

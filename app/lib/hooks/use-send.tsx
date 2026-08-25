@@ -3,7 +3,7 @@
 import { useAction } from "@solana/react";
 import { toast } from "sonner";
 import { useCluster } from "../../components/cluster-context";
-import { parseTransactionError } from "../errors";
+import { isBlockhashExpired, parseTransactionError } from "../errors";
 
 type TxResult = { context: { signature: string } };
 
@@ -17,7 +17,14 @@ export function useSend() {
       successMessage: string
     ) => {
       try {
-        const result = await action();
+        let result: TxResult;
+        try {
+          result = await action();
+        } catch (error) {
+          if (!isBlockhashExpired(error)) throw error;
+          toast.info("Transaction expired; retrying with a fresh blockhash");
+          result = await action();
+        }
         const signature = result.context.signature;
         toast.success(successMessage, {
           description: (

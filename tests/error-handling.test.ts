@@ -5,7 +5,11 @@ import {
   ValidationError,
 } from "../app/lib/api-response";
 import { BillStoreError } from "../app/lib/bill-store";
-import { errorMessage, parseTransactionError } from "../app/lib/errors";
+import {
+  errorMessage,
+  isBlockhashExpired,
+  parseTransactionError,
+} from "../app/lib/errors";
 import { ApiError, fetchJson } from "../app/lib/fetch-json";
 
 const originalFetch = globalThis.fetch;
@@ -125,5 +129,21 @@ test("parseTransactionError reads messages off wrapped non-Error rejections", ()
   ).toBe("inner");
   expect(parseTransactionError({})).toBe(
     "The transaction failed for an unknown reason."
+  );
+});
+
+test("recognizes expired blockhash errors and gives a retryable message", () => {
+  const error = Object.assign(new Error("expired"), {
+    name: "SolanaError",
+    context: {
+      __code: 1,
+      currentBlockHeight: 475682982n,
+      lastValidBlockHeight: 475682978n,
+    },
+  });
+
+  expect(isBlockhashExpired(error)).toBe(true);
+  expect(parseTransactionError(error)).toBe(
+    "The transaction expired before reaching Solana. Please try again."
   );
 });
