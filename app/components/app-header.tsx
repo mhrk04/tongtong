@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { ClusterSelect } from "./cluster-select";
 import { ThemeToggle } from "./theme-toggle";
 import { WalletButton } from "./wallet-button";
 
@@ -13,7 +12,6 @@ export function AppHeader() {
       </Link>
       <div className="flex items-center gap-3">
         <ThemeToggle />
-        <ClusterSelect />
         <WalletButton />
       </div>
     </header>
